@@ -20,3 +20,4 @@ Aplicación integral de análisis documental, RAG (Retrieval-Augmented Generatio
 - **Base de Datos Vectorial:** PostgreSQL 16 + `pgvector`
 - **PDF Engine & OCR:** PyMuPDF (`fitz`), PDF.js, RapidOCR ONNX
 - **Inferencia:** Ollama, Llama.cpp, Google Gemini API
+# chatpdfChuks
