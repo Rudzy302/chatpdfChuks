@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.env
+.env
+
+# Entornos virtuales
+venv/
+env/
+.venv/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Archivos temporales de subida
+uploads/*
+!uploads/.gitkeep
+
+# Modelos y pesos pesados
+*.gguf
+*.bin
