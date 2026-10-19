@@ -33,9 +33,30 @@ def process_and_index_pdf(file_bytes: bytes, filename: str, provider: str = "Oll
     if len(doc) > settings.MAX_PDF_PAGES:
         raise ValueError(f"El documento supera el límite de {settings.MAX_PDF_PAGES} páginas ({len(doc)} páginas).")
 
+    # CACHÉ INSTANTÁNEO EN BASE DE DATOS:
+    # Si el archivo ya fue indexado previamente en PostgreSQL/SQLite, reutilizar los chunks y vectores existentes
+    existing_docs = db.get_indexed_documents()
+    already_indexed = next((d for d in existing_docs if d["filename"] == filename and d.get("chunks", 0) > 0), None)
+    
     pdf_save_path = os.path.join(settings.UPLOADS_DIR, filename)
-    with open(pdf_save_path, "wb") as f:
-        f.write(file_bytes)
+    if not os.path.exists(pdf_save_path):
+        with open(pdf_save_path, "wb") as f:
+            f.write(file_bytes)
+
+    if already_indexed:
+        print(f"[CACHE] Documento '{filename}' ya indexado en base de datos ({already_indexed['chunks']} chunks). Retornando al instante.")
+        return {
+            "filename": filename,
+            "pages": len(doc),
+            "chunks_indexed": already_indexed["chunks"],
+            "cached": True,
+            "auto_summary": f"Documento '{filename}' cargado instantáneamente desde la base de datos ({already_indexed['chunks']} páginas indexadas con vectores).",
+            "suggested_questions": [
+                f"¿De qué trata {filename}?",
+                "Explícame los conceptos más importantes",
+                "¿Qué conclusiones o datos clave contiene?"
+            ]
+        }
 
     chunks = []
     full_text = ""
