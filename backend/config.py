@@ -19,7 +19,7 @@ class Settings(BaseModel):
     DEFAULT_CHAT_MODEL: str = "qwen2.5:7b"
     LLAMACPP_URL: str = os.environ.get("LLAMACPP_URL", "http://localhost:8080/v1")
     
-    MAX_PDF_PAGES: int = 30
+    MAX_PDF_PAGES: int = int(os.environ.get("MAX_PDF_PAGES", "150"))
 
 settings = Settings()
 os.makedirs(settings.UPLOADS_DIR, exist_ok=True)

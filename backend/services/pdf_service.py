@@ -41,64 +41,62 @@ def process_and_index_pdf(file_bytes: bytes, filename: str, provider: str = "Oll
     full_text = ""
     total_pages = len(doc)
 
-    for idx in range(total_pages):
+    from concurrent.futures import ThreadPoolExecutor
+
+    def process_page(idx):
         pnum = idx + 1
         page = doc.load_page(idx)
         t = page.get_text() or ""
         clean_t = re.sub(r'(\w+)-\n(\w+)', r'\1\2', t)
         clean_t = re.sub(r'[ \t]+', ' ', clean_t).strip()
 
-        # Si la página es escaneada o tiene poco texto, aplicamos OCR neural directo
+        # Optimización 1: OCR selectivo e inteligente
+        # Solo ejecutar OCR si la página tiene poco texto digital legible (< 60 caracteres)
         ocr_text = ""
-        if len(clean_t) < 40 or analyze_images:
+        if len(clean_t) < 60:
             try:
-                pix_ocr = page.get_pixmap(dpi=150)
+                pix_ocr = page.get_pixmap(dpi=130)
                 ocr_text = extract_ocr_text_from_pixmap(pix_ocr)
             except Exception:
                 pass
 
-        # Análisis visual bajo demanda para la página (ilustraciones, fotos)
+        # Optimización 2: Análisis visual únicamente si se solicita y si hay imágenes reales
         img_descriptions = []
-        if analyze_images:
+        if analyze_images and (len(clean_t) < 40 or idx < 2):
             try:
                 page_imgs = extract_images_from_pdf(doc, pnum)
-                if not page_imgs and len(clean_t.strip()) < 30 and not ocr_text:
-                    pix = page.get_pixmap(dpi=130)
-                    img_bytes = pix.tobytes("jpeg")
-                    page_imgs.append({
-                        "format": "jpeg",
-                        "bytes": img_bytes,
-                        "width": pix.width,
-                        "height": pix.height
-                    })
-
-                for img_idx, img in enumerate(page_imgs[:2]):
+                for img_idx, img in enumerate(page_imgs[:1]):
                     desc = describe_image_with_vision(img["bytes"], pnum, provider=provider, api_key=api_key)
                     if desc:
-                        img_descriptions.append(f"[Gráfico #{img_idx+1}]: {desc}")
+                        img_descriptions.append(f"[Ilustración #{img_idx+1}]: {desc}")
             except Exception:
                 pass
 
-        # Construcción de 1 CHUNK ÚNICO Y COMPLETO POR PÁGINA
+        # 1 CHUNK ÚNICO Y COMPLETO POR PÁGINA
         page_chunk_parts = []
         if clean_t:
             page_chunk_parts.append(clean_t)
         if ocr_text and ocr_text != clean_t:
-            page_chunk_parts.append("Texto transcrito de la página (OCR):\n" + ocr_text)
+            page_chunk_parts.append("Texto transcrito (OCR):\n" + ocr_text)
         if img_descriptions:
-            page_chunk_parts.append("Contenido visual e ilustraciones:\n" + "\n".join(img_descriptions))
+            page_chunk_parts.append("Elementos visuales:\n" + "\n".join(img_descriptions))
 
         page_combined_content = "\n\n".join(page_chunk_parts).strip()
         if not page_combined_content:
-            page_combined_content = f"Página {pnum} del documento sin texto ni elementos gráficos legibles."
+            page_combined_content = f"Página {pnum} del documento sin texto legible."
 
         chunk_type = "hybrid" if (clean_t or ocr_text) and img_descriptions else ("image" if img_descriptions else "text")
-        chunks.append({
+        return {
             "text": page_combined_content,
             "page": pnum,
             "type": chunk_type
-        })
-        full_text += f"\n[PÁGINA {pnum}]:\n" + page_combined_content + "\n"
+        }
+
+    # Procesar páginas secuencialmente de forma ultra rápida
+    for idx in range(total_pages):
+        chunk_data = process_page(idx)
+        chunks.append(chunk_data)
+        full_text += f"\n[PÁGINA {chunk_data['page']}]:\n" + chunk_data["text"] + "\n"
 
     if not chunks:
         chunks.append({
@@ -107,17 +105,21 @@ def process_and_index_pdf(file_bytes: bytes, filename: str, provider: str = "Oll
             "type": "text"
         })
 
-    # Preparar e insertar chunks con embeddings
-    chunks_to_insert = []
-    for idx, item in enumerate(chunks):
+    # Optimización 3: Generación paralela de embeddings con nomic-embed-text
+    chunks_to_insert = [None] * len(chunks)
+    def embed_chunk(item_idx):
+        item = chunks[item_idx]
         emb_vec = generate_embedding(item["text"])
-        chunks_to_insert.append({
+        chunks_to_insert[item_idx] = {
             "page": item["page"],
-            "index": idx,
+            "index": item_idx,
             "type": item["type"],
             "text": item["text"],
             "embedding": emb_vec
-        })
+        }
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        list(executor.map(embed_chunk, range(len(chunks))))
 
     db.insert_chunks(filename, chunks_to_insert)
 
