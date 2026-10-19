@@ -37,7 +37,7 @@ export function getPdfFileUrl(filename) {
   return `${API_BASE}/documents/${encodeURIComponent(filename)}/file`;
 }
 
-export async function sendChatMessage({ prompt, activeDoc = "", history = [], provider = "Llama.cpp Server (Local)", apiKey = "", modelName = "", topK = 6 }) {
+export async function sendChatMessage({ prompt, activeDoc = "", history = [], provider = "Ollama (Local)", apiKey = "", modelName = "", topK = 6 }) {
   const res = await fetch(`${API_BASE}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -59,7 +59,7 @@ export async function sendChatMessage({ prompt, activeDoc = "", history = [], pr
   return res.json();
 }
 
-export async function fetchSummary({ filename, provider = "Llama.cpp Server (Local)", apiKey = "", modelName = "" }) {
+export async function fetchSummary({ filename, provider = "Ollama (Local)", apiKey = "", modelName = "" }) {
   const res = await fetch(`${API_BASE}/summary`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

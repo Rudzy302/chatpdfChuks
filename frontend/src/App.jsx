@@ -88,7 +88,7 @@ export default function App() {
 
   // Configuración de modelo
   const [aiSettings, setAiSettings] = useState({
-    provider: "Llama.cpp Server (Local)",
+    provider: "Ollama (Local)",
     modelName: "qwen2.5:7b",
     apiKey: "",
     topK: 6,

@@ -46,9 +46,43 @@ html, body, #root {
   background: var(--border-hover);
 }
 
+/* Estilos oficiales del TextLayer de PDF.js para selección y resaltado transparente */
+.textLayer {
+  position: absolute;
+  text-align: initial;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  -webkit-text-size-adjust: none;
+  -moz-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.textLayer span,
+.textLayer br {
+  color: transparent !important;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer ::selection {
+  background: rgba(79, 107, 245, 0.35);
+}
+
 /* Fluorescent highlight in PDF pages */
 .pdf-highlight-mark {
   background-color: rgba(254, 240, 138, 0.88) !important;
+  color: transparent !important;
   outline: 2px solid rgba(234, 179, 8, 1) !important;
   border-radius: 3px !important;
   box-shadow: 0 0 12px rgba(234, 179, 8, 0.75) !important;

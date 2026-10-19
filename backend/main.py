@@ -41,14 +41,14 @@ class ChatRequest(BaseModel):
     prompt: str
     active_doc: Optional[str] = ""
     history: List[ChatMessage] = []
-    provider: Optional[str] = "Llama.cpp Server (Local)"
+    provider: Optional[str] = "Ollama (Local)"
     api_key: Optional[str] = ""
     model_name: Optional[str] = ""
     top_k: Optional[int] = 6
 
 class SummaryRequest(BaseModel):
     filename: str
-    provider: Optional[str] = "Llama.cpp Server (Local)"
+    provider: Optional[str] = "Ollama (Local)"
     api_key: Optional[str] = ""
     model_name: Optional[str] = ""
 
