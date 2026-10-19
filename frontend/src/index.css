@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg-base: #0f1115;
+  --bg-card: #161920;
+  --bg-sidebar: #12141a;
+  --border: #232733;
+  --border-hover: #363d4f;
+  --accent: #4f6bf5;
+  --accent-light: rgba(79, 107, 245, 0.15);
+  --text: #f1f3f7;
+  --text-muted: #8d95a5;
+  --danger: #ef4444;
+  --success: #10b981;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-base);
+  color: var(--text);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+/* Fluorescent highlight in PDF pages */
+.pdf-highlight-mark {
+  background-color: rgba(254, 240, 138, 0.78) !important;
+  outline: 2px solid rgba(234, 179, 8, 0.9) !important;
+  border-radius: 2px !important;
+  box-shadow: 0 0 8px rgba(234, 179, 8, 0.6) !important;
+}

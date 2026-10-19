@@ -20,3 +20,7 @@ uploads/*
 # Modelos y pesos pesados
 *.gguf
 *.bin
+
+# Base de datos local SQLite fallback
+*.db
+rag_local.db

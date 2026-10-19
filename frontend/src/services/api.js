@@ -1,0 +1,79 @@
+const API_BASE = "http://localhost:8000/api";
+
+export async function fetchDocuments() {
+  const res = await fetch(`${API_BASE}/documents`);
+  if (!res.ok) throw new Error("Error obteniendo documentos");
+  return res.json();
+}
+
+export async function uploadDocument(file, { analyzeImages = true, provider = "Ollama (Local)", apiKey = "" } = {}) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("analyze_images", analyzeImages);
+  formData.append("provider", provider);
+  formData.append("api_key", apiKey);
+
+  const res = await fetch(`${API_BASE}/documents/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Error en la subida" }));
+    throw new Error(err.detail || "Error al procesar el archivo");
+  }
+  return res.json();
+}
+
+export async function deleteDocument(filename) {
+  const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(filename)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Error al eliminar documento");
+  return res.json();
+}
+
+export function getPdfFileUrl(filename) {
+  return `${API_BASE}/documents/${encodeURIComponent(filename)}/file`;
+}
+
+export async function sendChatMessage({ prompt, activeDoc = "", history = [], provider = "Llama.cpp Server (Local)", apiKey = "", modelName = "", topK = 6 }) {
+  const res = await fetch(`${API_BASE}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      active_doc: activeDoc,
+      history,
+      provider,
+      api_key: apiKey,
+      model_name: modelName,
+      top_k: topK,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Error en el chat" }));
+    throw new Error(err.detail || "Error en el servidor de IA");
+  }
+  return res.json();
+}
+
+export async function fetchSummary({ filename, provider = "Llama.cpp Server (Local)", apiKey = "", modelName = "" }) {
+  const res = await fetch(`${API_BASE}/summary`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      filename,
+      provider,
+      api_key: apiKey,
+      model_name: modelName,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Error al generar resumen" }));
+    throw new Error(err.detail || "Error al obtener síntesis");
+  }
+  return res.json();
+}
