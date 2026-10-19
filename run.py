@@ -4,25 +4,21 @@ import os
 import time
 import webbrowser
 import shutil
+import urllib.request
 
 def get_base_dir():
-    # Si se ejecuta como .exe empaquetado por PyInstaller
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
-    # Si se ejecuta como script .py normal
     return os.path.dirname(os.path.abspath(__file__))
 
 def find_python():
-    # En runtime congelado, sys.executable es el .exe (chatpdf.exe), NO python.exe
     if not getattr(sys, 'frozen', False):
         return sys.executable
     
-    # 1. Intentar encontrar python en el PATH del sistema
     py_path = shutil.which("python")
     if py_path and "WindowsApps" not in py_path:
         return py_path
         
-    # 2. Rutas conocidas comunes en Windows
     candidates = [
         r"C:\Users\rdavi\AppData\Local\Python\pythoncore-3.14-64\python.exe",
         r"C:\Users\rdavi\AppData\Local\Python\bin\python.exe"
@@ -42,6 +38,20 @@ def find_npm():
         return common_npm
     return "npm.cmd" if os.name == "nt" else "npm"
 
+def kill_proc_tree(pid):
+    """Termina de forma forzosa un proceso y todos sus subprocesos hijos en Windows."""
+    try:
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+def is_backend_alive():
+    try:
+        req = urllib.request.urlopen("http://localhost:8000/api/documents", timeout=1)
+        return req.status == 200
+    except Exception:
+        return False
+
 def main():
     root_dir = get_base_dir()
     frontend_dir = os.path.join(root_dir, "frontend")
@@ -49,7 +59,6 @@ def main():
     py_bin = find_python()
     npm_bin = find_npm()
     
-    # Flag para ocultar ventanas en Windows si corre en segundo plano
     creationflags = 0
     if os.name == "nt":
         creationflags = subprocess.CREATE_NO_WINDOW
@@ -71,12 +80,21 @@ def main():
     time.sleep(2)
     webbrowser.open("http://localhost:3000")
     
+    # Monitor de ciclo de vida: si el backend recibe la señal de shutdown desde la interfaz o el usuario sale, se tumba todo
     try:
-        backend_proc.wait()
-        frontend_proc.wait()
+        while True:
+            time.sleep(1.5)
+            # Si el proceso de backend terminó o se solicitó shutdown por la API
+            if backend_proc.poll() is not None or not is_backend_alive():
+                break
     except KeyboardInterrupt:
-        backend_proc.terminate()
-        frontend_proc.terminate()
+        pass
+    finally:
+        # 6. Tumbar absolutamente todo para no dejar nada consumiendo recursos en segundo plano
+        if backend_proc.poll() is None:
+            kill_proc_tree(backend_proc.pid)
+        if frontend_proc.poll() is None:
+            kill_proc_tree(frontend_proc.pid)
 
 if __name__ == "__main__":
     main()

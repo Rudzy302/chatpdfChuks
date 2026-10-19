@@ -3,8 +3,9 @@ import Sidebar from "./components/Sidebar";
 import ChatView from "./components/ChatView";
 import PdfViewer from "./components/PdfViewer";
 import SummaryView from "./components/SummaryView";
-import { fetchDocuments, deleteDocument, sendChatMessage, getPdfFileUrl } from "./services/api";
-import { MessageSquare, FileText, Sparkles } from "lucide-react";
+import VideoModal from "./components/VideoModal";
+import { fetchDocuments, deleteDocument, sendChatMessage, getPdfFileUrl, generateVideo } from "./services/api";
+import { MessageSquare, FileText, Sparkles, Film } from "lucide-react";
 
 const THEMES = {
   "Minimal Dark (Grafito)": {
@@ -64,6 +65,10 @@ export default function App() {
   const [showPdf, setShowPdf] = useState(true);
   const [showSummary, setShowSummary] = useState(false);
 
+  // Modal de Video Storyboard
+  const [videoStoryboard, setVideoStoryboard] = useState(null);
+  const [generatingVideo, setGeneratingVideo] = useState(false);
+
   // Tema
   const [currentTheme, setCurrentTheme] = useState("Minimal Dark (Grafito)");
 
@@ -71,8 +76,13 @@ export default function App() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content: "Hola. Document Studio está listo para responder consultas sobre tus PDFs. Toda respuesta citará la página exacta con acceso directo y marcado fluorescente en el visor.",
+      content: "Hola. Document Studio está listo con soporte para reconocimiento por micrófono, lector de voz y resaltado por citas. Toda respuesta citará la página exacta con un círculo numérico para saltar a la fuente.",
     },
+  ]);
+  const [suggestedQuestions, setSuggestedQuestions] = useState([
+    "¿De qué trata este documento?",
+    "Explícame los conceptos más importantes",
+    "¿Qué ejercicios o imágenes contiene?"
   ]);
   const [sending, setSending] = useState(false);
 
@@ -119,6 +129,26 @@ export default function App() {
     }
   };
 
+  const handleUploadSuccess = (fname, uploadData) => {
+    loadDocs();
+    setActiveDoc(fname);
+
+    // 3 & 4. Si el backend generó resumen automático y preguntas sugeridas, mostrarlas de inmediato
+    if (uploadData?.auto_summary) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `📄 **Resumen inicial automático de '${fname}':**\n\n${uploadData.auto_summary}`,
+          citations: [1],
+        },
+      ]);
+    }
+    if (uploadData?.suggested_questions && uploadData.suggested_questions.length > 0) {
+      setSuggestedQuestions(uploadData.suggested_questions);
+    }
+  };
+
   const handleSendMessage = async (text) => {
     const userMsg = { role: "user", content: text };
     setMessages((prev) => [...prev, userMsg]);
@@ -140,15 +170,15 @@ export default function App() {
         role: "assistant",
         content: res.answer,
         citations: res.citations || [],
+        target_content: res.target_content || "",
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
       if (res.target_page) {
         setTargetPage(res.target_page);
       }
-      if (res.highlight_words) {
-        setHighlightWords(res.highlight_words);
-      }
+      // Inicialmente NO sobrecargamos con marcado de todas las palabras, se activa limpiamente por círculo
+      setHighlightWords([]);
     } catch (err) {
       setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err.message}` }]);
     } finally {
@@ -156,12 +186,40 @@ export default function App() {
     }
   };
 
-  const handleNavigateToPage = (pageNum, contextContent) => {
+  // 5. Salto y marcado de la parte citada al hacer clic en el círculo con número de orden
+  const handleNavigateToPage = (pageNum, citedContent) => {
     setTargetPage(pageNum);
     setShowPdf(true);
-    if (contextContent) {
-      const words = contextContent.match(/\b[A-Za-z0-9_áéíóúÁÉÍÓÚñÑ]{3,}\b/g) || [];
-      setHighlightWords(words.slice(0, 30));
+    if (citedContent) {
+      // Extraer términos clave exactos del fragmento citado específico
+      const words = citedContent.match(/\b[A-Za-z0-9_áéíóúÁÉÍÓÚñÑ]{3,}\b/g) || [];
+      const filtered = words.filter(
+        (w) => !["para", "como", "este", "esta", "sobre", "desde", "entre", "texto", "pagina", "archivo"].includes(w.toLowerCase())
+      );
+      setHighlightWords(filtered.slice(0, 15));
+    }
+  };
+
+  // 2. Generación de Video Resumen
+  const handleGenerateVideo = async () => {
+    if (!activeDoc || activeDoc === "Todos los documentos") {
+      alert("Selecciona un documento primero para generar su video resumen.");
+      return;
+    }
+    setGeneratingVideo(true);
+    try {
+      const res = await generateVideo({
+        filename: activeDoc,
+        provider: aiSettings.provider,
+        apiKey: aiSettings.apiKey,
+      });
+      if (res.storyboard) {
+        setVideoStoryboard(res.storyboard);
+      }
+    } catch (err) {
+      alert("Error generando video: " + err.message);
+    } finally {
+      setGeneratingVideo(false);
     }
   };
 
@@ -170,16 +228,18 @@ export default function App() {
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden" }}>
+      {/* Modal de Video */}
+      {videoStoryboard && (
+        <VideoModal storyboard={videoStoryboard} onClose={() => setVideoStoryboard(null)} />
+      )}
+
       {/* Sidebar */}
       <Sidebar
         documents={documents}
         activeDoc={activeDoc}
         onSelectDoc={setActiveDoc}
         onDeleteDoc={handleDeleteDoc}
-        onUploadSuccess={(fname) => {
-          loadDocs();
-          setActiveDoc(fname);
-        }}
+        onUploadSuccess={handleUploadSuccess}
         theme={currentTheme}
         onThemeChange={setCurrentTheme}
         themes={THEMES}
@@ -288,6 +348,9 @@ export default function App() {
                 sending={sending}
                 aiSettings={aiSettings}
                 onUpdateAiSettings={setAiSettings}
+                suggestedQuestions={suggestedQuestions}
+                onGenerateVideo={handleGenerateVideo}
+                activeDoc={activeDoc}
               />
             </div>
           )}

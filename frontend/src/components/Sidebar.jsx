@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Upload, Trash2, File, CheckCircle2, ChevronDown, Palette, RefreshCw } from "lucide-react";
+import { Upload, Trash2, File, CheckCircle2, ChevronDown, Palette, RefreshCw, Power } from "lucide-react";
 
 export default function Sidebar({
   documents = [],
@@ -22,8 +22,8 @@ export default function Sidebar({
     setUploading(true);
     try {
       const { uploadDocument } = await import("../services/api");
-      await uploadDocument(file, { analyzeImages, provider });
-      if (onUploadSuccess) onUploadSuccess(file.name);
+      const res = await uploadDocument(file, { analyzeImages, provider });
+      if (onUploadSuccess) onUploadSuccess(file.name, res.data);
     } catch (err) {
       alert("Error en la subida: " + err.message);
     } finally {
@@ -149,7 +149,7 @@ export default function Sidebar({
       </div>
 
       {/* Selector de Tema */}
-      <div style={{ marginTop: "auto" }}>
+      <div style={{ marginTop: "auto", marginBottom: "16px" }}>
         <div style={{ fontSize: "0.75rem", fontWeight: "600", color: "var(--text-muted)", marginBottom: "8px", textTransform: "uppercase" }}>
           Tema y Apariencia
         </div>
@@ -175,6 +175,37 @@ export default function Sidebar({
           ))}
         </select>
       </div>
+
+      {/* Botón de Apagado Completo de Procesos */}
+      <button
+        onClick={async () => {
+          if (confirm("¿Deseas cerrar la aplicación y apagar todos los procesos de fondo (backend, frontend y servidores)?")) {
+            const { shutdownSystem } = await import("../services/api");
+            await shutdownSystem();
+            window.close();
+            document.body.innerHTML = "<div style='display:flex;height:100vh;align-items:center;justify-content:center;background:#111;color:#fff;font-family:sans-serif;'><h1>Aplicación y procesos cerrados correctamente. Ya puedes cerrar esta pestaña.</h1></div>";
+          }
+        }}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "8px",
+          padding: "10px",
+          borderRadius: "6px",
+          background: "rgba(239, 68, 68, 0.12)",
+          border: "1px solid rgba(239, 68, 68, 0.3)",
+          color: "#f87171",
+          fontSize: "0.82rem",
+          fontWeight: "600",
+          cursor: "pointer",
+          transition: "background 0.2s ease",
+        }}
+      >
+        <Power size={14} />
+        Cerrar y Apagar Servidor
+      </button>
     </aside>
   );
 }

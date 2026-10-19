@@ -21,7 +21,7 @@ def cosine_distance(vec_a: list, vec_b: list) -> float:
     return 1.0 - sim
 
 class DatabaseClient:
-    """Cliente híbrido: intenta PostgreSQL (pgvector); si no está levantado (ej. Docker apagado), conmuta a SQLite transparente."""
+    """Cliente robusto: conecta directamente a PostgreSQL (pgvector en puerto 5433); si Docker está temporalmente offline, conmuta a SQLite."""
     def __init__(self):
         self.mode = "sqlite"
         try:
@@ -32,12 +32,14 @@ class DatabaseClient:
                 host=settings.DB_HOST,
                 port=settings.DB_PORT,
                 database=settings.DB_NAME,
-                timeout=2
+                timeout=3
             )
             con.close()
             self.mode = "postgres"
-        except Exception:
+            print(f"[DB] Conectado exitosamente a PostgreSQL (pgvector) en {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
+        except Exception as e:
             self.mode = "sqlite"
+            print(f"[DB] PostgreSQL no disponible ({e}). Usando fallback SQLite.")
 
     def init_schema(self):
         if self.mode == "postgres":

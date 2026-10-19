@@ -121,10 +121,56 @@ def process_and_index_pdf(file_bytes: bytes, filename: str, provider: str = "Oll
 
     db.insert_chunks(filename, chunks_to_insert)
 
+    # 3 & 4. Resumen automático inicial y generación de preguntas para seguir la conversación
+    auto_summary = ""
+    suggested_questions = []
+    try:
+        from .ai import call_llm
+        summary_prompt = (
+            f"El documento '{filename}' acaba de ser indexado con {total_pages} páginas. "
+            f"Lee los primeros fragmentos:\n{full_text[:5000]}\n\n"
+            "Por favor, responde con dos secciones:\n"
+            "RESUMEN:\n"
+            "(Un resumen ejecutivo conciso de 3 a 5 puntos clave sobre qué trata el documento)\n\n"
+            "PREGUNTAS SUGERIDAS:\n"
+            "(Exactamente 3 preguntas interesantes y específicas que el usuario puede hacerte para profundizar en el documento. Cada pregunta en una línea empezando con '-')\n"
+        )
+        llm_reply = call_llm(
+            prompt=summary_prompt,
+            system_prompt="Eres un asistente analista de documentos eficiente y cordial.",
+            history=[],
+            provider=provider,
+            api_key=api_key
+        )
+        
+        # Separar resumen y preguntas
+        if "PREGUNTAS SUGERIDAS:" in llm_reply:
+            parts = llm_reply.split("PREGUNTAS SUGERIDAS:")
+            auto_summary = parts[0].replace("RESUMEN:", "").strip()
+            q_lines = parts[1].strip().split("\n")
+            for q in q_lines:
+                q_clean = q.strip().lstrip("-").lstrip("0123456789.").strip()
+                if q_clean and len(q_clean) > 8:
+                    suggested_questions.append(q_clean)
+        else:
+            auto_summary = llm_reply.strip()
+    except Exception as e:
+        auto_summary = f"Documento '{filename}' indexado exitosamente ({total_pages} páginas)."
+        suggested_questions = ["¿De qué trata este documento?", "¿Cuáles son los puntos principales?"]
+
+    if not suggested_questions:
+        suggested_questions = [
+            f"¿Cuál es el objetivo principal de {filename}?",
+            "Explícame los conceptos más importantes",
+            "¿Qué datos o conclusiones destacadas contiene?"
+        ]
+
     return {
         "filename": filename,
         "pages": total_pages,
-        "chunks_indexed": len(chunks)
+        "chunks_indexed": len(chunks),
+        "auto_summary": auto_summary,
+        "suggested_questions": suggested_questions[:3]
     }
 
 def get_indexed_documents():

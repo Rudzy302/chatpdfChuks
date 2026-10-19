@@ -177,6 +177,7 @@ CONTEXTO DOCUMENTAL E IMÁGENES:
         "citations": seen_pages,
         "target_page": target_page,
         "target_file": rag_info["target_file"] or req.active_doc,
+        "target_content": rag_info["target_content"],
         "highlight_words": highlight_words
     }
 
@@ -201,3 +202,79 @@ def summary_endpoint(req: SummaryRequest):
         model_name=req.model_name
     )
     return {"summary": summary_text}
+
+# --- RUTA DE GENERACIÓN DE VIDEO DE RESUMEN ---
+
+class VideoRequest(BaseModel):
+    filename: str
+    summary_text: Optional[str] = ""
+    provider: Optional[str] = "Ollama (Local)"
+    api_key: Optional[str] = ""
+
+@app.post("/api/video/generate")
+def generate_video_endpoint(req: VideoRequest):
+    """Genera un storyboard y escenas estructuradas para un video resumen animado del documento."""
+    text_source = req.summary_text
+    if not text_source:
+        text_source = get_document_full_text(req.filename)[:4000]
+    
+    if not text_source:
+        raise HTTPException(status_code=400, detail="No hay contenido suficiente para generar el video.")
+
+    prompt = (
+        f"Genera el guión y estructura de un video corto (Short/Reel de 30-45 segundos) resumiendo el documento '{req.filename}'. "
+        f"Basado en este contenido:\n{text_source[:3000]}\n\n"
+        "Devuelve un formato JSON estricto con la siguiente estructura:\n"
+        "{\n"
+        '  "title": "Título llamativo",\n'
+        '  "scenes": [\n'
+        '    {"id": 1, "duration": 5, "title": "Introducción", "narration": "Frase de locución...", "visual_prompt": "Descripción visual de la escena"},\n'
+        '    {"id": 2, "duration": 8, "title": "Concepto Clave", "narration": "Explicación breve...", "visual_prompt": "Descripción visual..."},\n'
+        '    {"id": 3, "duration": 8, "title": "Puntos Principales", "narration": "Detalle crucial...", "visual_prompt": "Gráfico o ilustración..."},\n'
+        '    {"id": 4, "duration": 5, "title": "Conclusión", "narration": "Llamado a la acción o resumen final...", "visual_prompt": "Cierre..."}\n'
+        "  ]\n"
+        "}\n"
+        "IMPORTANTE: Devuelve ÚNICAMENTE el bloque JSON válido, sin comentarios adicionales ni markdown."
+    )
+
+    storyboard_raw = call_llm(
+        prompt=prompt,
+        system_prompt="Eres un director audiovisual especializado en crear videos educativos y técnicos impactantes.",
+        history=[],
+        provider=req.provider,
+        api_key=req.api_key
+    )
+
+    import json
+    try:
+        # Extraer JSON de la respuesta
+        match = re.search(r'\{.*\}', storyboard_raw, re.DOTALL)
+        if match:
+            storyboard = json.loads(match.group(0))
+        else:
+            storyboard = json.loads(storyboard_raw)
+    except Exception:
+        storyboard = {
+            "title": f"Resumen de {req.filename}",
+            "scenes": [
+                {"id": 1, "duration": 6, "title": "Visión General", "narration": f"Este documento aborda los aspectos centrales de {req.filename}.", "visual_prompt": "Documento abriéndose en un entorno de estudio analítico"},
+                {"id": 2, "duration": 8, "title": "Desarrollo", "narration": text_source[:150].strip() + "...", "visual_prompt": "Visualización de conceptos y datos clave"},
+                {"id": 3, "duration": 6, "title": "Conclusión", "narration": "Consulta el chat interactivo para explorar cada página citada en detalle.", "visual_prompt": "Pantalla interactiva con citas y resaltado"}
+            ]
+        }
+
+    return {"status": "ok", "storyboard": storyboard}
+
+# --- RUTA DE APAGADO SEGURO ---
+
+@app.post("/api/system/shutdown")
+def shutdown_system():
+    """Apaga ordenadamente los procesos del backend y frontend para liberar memoria y recursos."""
+    import threading
+    def kill_soon():
+        import time
+        time.sleep(0.5)
+        os._exit(0)
+    threading.Thread(target=kill_soon).start()
+    return {"status": "ok", "message": "Servicios apagándose correctamente..."}
+

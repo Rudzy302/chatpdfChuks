@@ -77,3 +77,31 @@ export async function fetchSummary({ filename, provider = "Llama.cpp Server (Loc
   }
   return res.json();
 }
+
+export async function generateVideo({ filename, summaryText = "", provider = "Ollama (Local)", apiKey = "" }) {
+  const res = await fetch(`${API_BASE}/video/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      filename,
+      summary_text: summaryText,
+      provider,
+      api_key: apiKey,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Error al generar video" }));
+    throw new Error(err.detail || "Error al crear storyboard del video");
+  }
+  return res.json();
+}
+
+export async function shutdownSystem() {
+  try {
+    await fetch(`${API_BASE}/system/shutdown`, { method: "POST" });
+  } catch (e) {
+    // Si la conexión se cierra porque el servidor murió, es el resultado esperado
+  }
+}
+
