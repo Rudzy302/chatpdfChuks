@@ -56,15 +56,15 @@ DEFAULT_THEMES = {
         "text_muted": "#8d95a5"
     },
     "Minimal Light (Papel & Lino)": {
-        "bg_base": "#f8f9fa",
+        "bg_base": "#f3f6f5",
         "bg_card": "#ffffff",
-        "bg_sidebar": "#f1f3f5",
-        "border": "#e5e7eb",
-        "border_hover": "#d1d5db",
-        "accent": "#2563eb",
-        "accent_light": "rgba(37, 99, 235, 0.12)",
-        "text": "#111827",
-        "text_muted": "#6b7280"
+        "bg_sidebar": "#e9efed",
+        "border": "#d9e2df",
+        "border_hover": "#b9cac4",
+        "accent": "#287a70",
+        "accent_light": "rgba(40, 122, 112, 0.12)",
+        "text": "#192b29",
+        "text_muted": "#536560"
     },
     "Nordic Slate (Pizarra)": {
         "bg_base": "#181d24",
@@ -125,13 +125,17 @@ ALL_THEMES.update(st.session_state.saved_custom_themes)
 
 # --- ESTADOS DE SESIÓN ---
 if "app_theme" not in st.session_state:
-    st.session_state.app_theme = "Minimal Dark (Grafito)"
+    st.session_state.app_theme = "Minimal Light (Papel & Lino)"
 if "show_chat" not in st.session_state:
     st.session_state.show_chat = True
 if "show_pdf" not in st.session_state:
     st.session_state.show_pdf = True
 if "show_summary" not in st.session_state:
     st.session_state.show_summary = False
+if "sidebar_module" not in st.session_state:
+    st.session_state.sidebar_module = "library"
+if "sidebar_collapsed" not in st.session_state:
+    st.session_state.sidebar_collapsed = False
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "Hola. Document Studio está listo para responder consultas sobre tus PDFs. Toda respuesta citará la página exacta con acceso directo y resaltado en el documento."}
@@ -186,13 +190,28 @@ if "live_custom" not in st.session_state:
 if st.session_state.app_theme == "🎨 Personalizado":
     current_theme = st.session_state.live_custom
 else:
-    current_theme = ALL_THEMES.get(st.session_state.app_theme, DEFAULT_THEMES["Minimal Dark (Grafito)"])
+    current_theme = ALL_THEMES.get(st.session_state.app_theme, DEFAULT_THEMES["Minimal Light (Papel & Lino)"])
 
-# Estilos CSS Minimalistas
+# Contrast-aware ink for primary controls across built-in and custom themes.
+def relative_luminance(hex_color):
+    channels = [int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def contrast_ratio(color_a, color_b):
+    luminance_a = relative_luminance(color_a)
+    luminance_b = relative_luminance(color_b)
+    lighter, darker = max(luminance_a, luminance_b), min(luminance_a, luminance_b)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+accent_ink = max(("#ffffff", "#10201e"), key=lambda color: contrast_ratio(color, current_theme["accent"]))
+color_scheme = "light" if relative_luminance(current_theme["bg_base"]) > 0.45 else "dark"
+
+# Estilos de la aplicación. Los selectores apuntan a los test IDs reales de Streamlit 1.66.
 st.markdown(f"""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-
     :root {{
         --bg-base: {current_theme['bg_base']};
         --bg-card: {current_theme['bg_card']};
@@ -203,156 +222,1105 @@ st.markdown(f"""
         --accent-light: {current_theme['accent_light']};
         --text: {current_theme['text']};
         --text-muted: {current_theme['text_muted']};
+        --accent-ink: {accent_ink};
+        --sidebar-width: {"4.75rem" if st.session_state.sidebar_collapsed else "22rem"};
+        --background-color: {current_theme['bg_base']};
+        --secondary-background-color: {current_theme['bg_card']};
+        --text-color: {current_theme['text']};
+        --primary-color: {current_theme['accent']};
+        color-scheme: {color_scheme};
     }}
 
     html, body, [data-testid="stAppViewContainer"] {{
-        background-color: var(--bg-base) !important;
-        color: var(--text) !important;
-        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
-        height: 100vh !important;
+        min-height: 100dvh !important;
+        height: 100dvh !important;
         margin: 0 !important;
         padding: 0 !important;
+        background: var(--bg-base) !important;
+        color: var(--text) !important;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI Variable", sans-serif !important;
     }}
 
-    [data-testid="stSidebar"] {{
-        background-color: var(--bg-sidebar) !important;
-        border-right: 1px solid var(--border) !important;
+    [data-testid="stAppViewContainer"] {{
+        overflow: hidden !important;
+    }}
+
+    [data-testid="stMain"] {{
+        height: 100dvh !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        background: var(--bg-base) !important;
+    }}
+
+    [data-testid="stMainBlockContainer"] {{
+        box-sizing: border-box !important;
+        width: 100% !important;
+        max-width: none !important;
+        min-height: 100dvh !important;
+        padding: 0.75rem 4.75rem 1rem clamp(0.75rem, 1.8vw, 1.75rem) !important;
     }}
 
     header[data-testid="stHeader"] {{
         display: none !important;
+        height: 0 !important;
     }}
 
-    section.main > .block-container {{
-        padding: 0.5rem 1.1rem !important;
-        max-width: 100% !important;
-        min-height: 100vh !important;
-        display: flex !important;
-        flex-direction: column !important;
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="stExpandSidebarButton"],
+    [data-testid="stSidebarResizeHandle"] {{
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
     }}
 
-    /* Estabilidad de scroll en el chat sin rebotes o saltos */
-    div[data-testid="stVerticalBlockBorderWrapper"] {{
-        overflow-anchor: none !important;
-    }}
-    div[data-testid="stVerticalBlock"] > div[style*="overflow-y"] {{
-        scroll-behavior: smooth !important;
-        overscroll-behavior-y: contain !important;
-    }}
-
-    ::-webkit-scrollbar {{
-        width: 6px;
-        height: 6px;
-    }}
-    ::-webkit-scrollbar-track {{
-        background: transparent;
-    }}
-    ::-webkit-scrollbar-thumb {{
-        background: var(--border);
-        border-radius: 4px;
-    }}
-    ::-webkit-scrollbar-thumb:hover {{
-        background: var(--border-hover);
+    [data-testid="stSidebar"] {{
+        box-sizing: border-box !important;
+        width: var(--sidebar-width) !important;
+        min-width: var(--sidebar-width) !important;
+        max-width: var(--sidebar-width) !important;
+        flex: 0 0 var(--sidebar-width) !important;
+        height: 100dvh !important;
+        overflow: hidden !important;
+        background: var(--bg-sidebar) !important;
+        border-right: 1px solid var(--border) !important;
+        transform: none !important;
+        transition: width 180ms ease, min-width 180ms ease, max-width 180ms ease, flex-basis 180ms ease !important;
     }}
 
-    /* Botones limpios */
-    div.stButton > button {{
-        background-color: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
+    [data-testid="stSidebarContent"] {{
+        width: 100% !important;
+        box-sizing: border-box !important;
+        padding: 0.7rem 0.55rem 1rem !important;
         color: var(--text) !important;
-        border-radius: 6px !important;
-        font-size: 0.83rem !important;
-        font-weight: 500 !important;
-        padding: 5px 11px !important;
-        transition: all 0.15s ease !important;
-        box-shadow: none !important;
-    }}
-    div.stButton > button:hover {{
-        border-color: var(--border-hover) !important;
-        background-color: rgba(255, 255, 255, 0.04) !important;
     }}
 
-    /* Botón activo */
-    div.stButton > button[kind="primary"] {{
-        background-color: var(--accent) !important;
-        border: 1px solid var(--accent) !important;
-        color: #ffffff !important;
-        font-weight: 600 !important;
-    }}
-    div.stButton > button[kind="primary"]:hover {{
-        filter: brightness(1.1);
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"],
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{
+        color: var(--text) !important;
     }}
 
-    /* Mensajes de conversación */
-    [data-testid="stChatMessage"] {{
-        background-color: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 8px !important;
-        padding: 0.9rem 1.1rem !important;
-        margin-bottom: 0.55rem !important;
-        font-size: 0.91rem !important;
-        line-height: 1.58 !important;
-        box-shadow: none !important;
-    }}
-    [data-testid="stChatMessage"]:hover {{
-        border-color: var(--border-hover) !important;
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {{
+        color: var(--text-muted) !important;
     }}
 
-    [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {{
-        border-left: 3px solid var(--accent) !important;
-    }}
-
-    [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {{
-        background-color: var(--accent-light) !important;
+    [data-testid="stSidebar"] hr {{
+        margin: 0.8rem 0 !important;
         border-color: var(--border) !important;
     }}
 
-    /* Entrada de Chat */
-    [data-testid="stChatInput"] {{
-        background-color: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 8px !important;
-        padding: 4px !important;
-        box-shadow: none !important;
-    }}
-    [data-testid="stChatInput"]:focus-within {{
-        border-color: var(--accent) !important;
-    }}
-
-    /* Barra inferior estilo ChatGPT para parámetros */
-    .chat-settings-bar {{
+    .sidebar-brand {{
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 4px 8px;
-        font-size: 0.78rem;
+        gap: 0.7rem;
+        min-height: 46px;
+        padding: 0 0 0.8rem;
+        margin-bottom: 0.8rem;
+        border-bottom: 1px solid var(--border);
+    }}
+
+    .brand-mark {{
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        flex: 0 0 44px;
+        border-radius: 12px;
+        background: var(--accent);
+        color: var(--accent-ink);
+        font-size: 1rem;
+        font-weight: 800;
+    }}
+
+    .brand-name {{
+        color: var(--text);
+        font-size: 0.95rem;
+        font-weight: 720;
+        letter-spacing: -0.025em;
+        line-height: 1.2;
+    }}
+
+    .brand-caption, .sidebar-section-label {{
         color: var(--text-muted);
-        border-top: 1px solid var(--border);
-        margin-top: 4px;
+        font-size: 0.63rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        line-height: 1.4;
+    }}
+
+    .brand-caption {{
+        margin-top: 0.2rem;
+        font-size: 0.56rem;
+        letter-spacing: 0.12em;
+    }}
+
+    .sidebar-rail-mark {{
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        margin: 0 auto 0.55rem;
+        border-radius: 12px;
+        background: var(--accent);
+        color: var(--accent-ink);
+        font-size: 0.95rem;
+        font-weight: 800;
+    }}
+
+    .sidebar-panel-brand {{
+        min-height: 40px;
+        padding: 0.65rem 0 0.55rem;
+        color: var(--text);
+        font-size: 0.91rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+    }}
+
+    .sidebar-section-label {{
+        margin: 0.15rem 0 0.55rem;
+        font-size: 0.62rem;
+    }}
+
+    .workspace-heading {{
+        display: flex;
+        min-height: 44px;
+        flex-direction: column;
+        justify-content: center;
+        gap: 0.14rem;
+        min-width: 0;
+    }}
+
+    .workspace-eyebrow {{
+        color: var(--text-muted);
+        font-size: 0.58rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+    }}
+
+    .workspace-title {{
+        overflow: hidden;
+        color: var(--text);
+        font-size: 1.05rem;
+        font-weight: 700;
+        letter-spacing: -0.025em;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }}
+
+    /* Sticky header begins at the top of the actual Streamlit scroll root. */
+    .st-key-workspace_header {{
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 40 !important;
+        display: block !important;
+        margin: -0.75rem 0 0.65rem !important;
+        padding: 0.45rem 0.55rem 0.5rem !important;
+        border-bottom: 1px solid var(--border) !important;
+        background: var(--bg-base) !important;
+    }}
+
+    .st-key-workspace_header [data-testid="stHorizontalBlock"] {{
+        align-items: center !important;
+    }}
+
+    .st-key-view_switcher {{
+        position: fixed !important;
+        top: 50% !important;
+        right: 0.75rem !important;
+        z-index: 55 !important;
+        display: flex !important;
+        width: 60px !important;
+        margin: 0 !important;
+        padding: 0.4rem !important;
+        transform: translateY(-50%) !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        gap: 0.45rem !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 15px !important;
+        background: var(--bg-sidebar) !important;
+        box-shadow: 0 8px 22px color-mix(in srgb, var(--text) 8%, transparent) !important;
+    }}
+
+    /* Streamlit 1.66 renders button widgets under data-testid, not .stButton. */
+    [data-testid="stButton"] button {{
+        box-sizing: border-box !important;
+        min-height: 42px !important;
+        padding: 0.5rem 0.75rem !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+        font-size: 0.84rem !important;
+        font-weight: 600 !important;
+        box-shadow: none !important;
+        transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, opacity 150ms ease !important;
+    }}
+
+    [data-testid="stButton"] button:hover {{
+        border-color: var(--accent) !important;
+        background: var(--accent-light) !important;
+    }}
+
+    [data-testid="stButton"] button:focus-visible {{
+        outline: 2px solid var(--accent) !important;
+        outline-offset: 2px !important;
+    }}
+
+    [data-testid="stBaseButton-primary"] {{
+        border-color: var(--accent) !important;
+        background: var(--accent) !important;
+        color: var(--accent-ink) !important;
+    }}
+
+    [data-testid="stButton"] [data-testid="stBaseButton-primary"] {{
+        border-color: var(--accent) !important;
+        background: var(--accent) !important;
+        color: var(--accent-ink) !important;
+    }}
+
+    [data-testid="stBaseButton-secondary"] {{
+        border-color: var(--border) !important;
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+    }}
+
+    [data-testid="stBaseButton-secondary"]:hover {{
+        border-color: var(--accent) !important;
+        background: var(--accent-light) !important;
+        color: var(--text) !important;
+    }}
+
+    .st-key-sidebar_rail {{
+        display: flex !important;
+        width: 48px !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        gap: 0.45rem !important;
+    }}
+
+    .st-key-sidebar_nav [data-testid="stButton"],
+    .st-key-sidebar_toggle [data-testid="stButton"] {{
+        width: 46px !important;
+        min-width: 46px !important;
+        margin: 0.14rem 0 !important;
+    }}
+
+    .st-key-sidebar_nav [data-testid="stButton"] button,
+    .st-key-sidebar_toggle [data-testid="stButton"] button {{
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 44px !important;
+        min-width: 44px !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        padding: 0 !important;
+        border-radius: 12px !important;
+    }}
+
+    .st-key-sidebar_nav [data-testid="stMarkdownContainer"],
+    .st-key-sidebar_toggle [data-testid="stMarkdownContainer"] {{
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        overflow: hidden !important;
+        clip-path: inset(50%) !important;
+        white-space: nowrap !important;
+    }}
+
+    .st-key-sidebar_nav [data-testid="stMarkdownContainer"] p,
+    .st-key-sidebar_toggle [data-testid="stMarkdownContainer"] p {{
+        margin: 0 !important;
+        line-height: 1.05 !important;
+    }}
+
+    .st-key-sidebar_rail > [data-testid="stElementContainer"] {{
+        width: 44px !important;
+        margin: 0 auto !important;
+    }}
+
+    .st-key-sidebar_rail hr {{
+        width: 100%;
+        margin: 0.35rem 0 !important;
+    }}
+
+    .st-key-sidebar_toggle [data-testid="stButton"] button {{
+        background: transparent !important;
+        color: var(--text-muted) !important;
+    }}
+
+    .st-key-sidebar_toggle {{
+        box-sizing: border-box !important;
+        width: 46px !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        flex: 0 0 44px !important;
+        margin: 0.1rem 0 !important;
+    }}
+
+    .st-key-toggle_sidebar_width {{
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        position: fixed !important;
+        top: 8.875rem !important;
+        left: calc(var(--sidebar-width) - 24px) !important;
+        z-index: 90 !important;
+        width: 48px !important;
+        height: 48px !important;
+        transition: left 180ms ease !important;
+    }}
+
+    .st-key-toggle_sidebar_width [data-testid="stButton"] {{
+        width: 44px !important;
+        min-width: 44px !important;
+        margin: 0 !important;
+    }}
+
+    .st-key-view_switcher [data-testid="stButton"] button {{
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 44px !important;
+        min-width: 44px !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        padding: 0 !important;
+        justify-content: center !important;
+        border-radius: 11px !important;
+        opacity: 0.56 !important;
+        background: transparent !important;
+        color: var(--text-muted) !important;
+    }}
+
+    .st-key-view_switcher [data-testid="stButton"] button:hover {{
+        opacity: 1 !important;
+        background: var(--bg-card) !important;
+    }}
+
+    .st-key-view_switcher [data-testid="stBaseButton-primary"] {{
+        opacity: 1 !important;
+        border-color: var(--accent) !important;
+        background: var(--accent-light) !important;
+        color: var(--accent) !important;
+    }}
+
+    .st-key-view_switcher [data-testid="stButton"] [data-testid="stBaseButton-primary"] {{
+        opacity: 1 !important;
+        border-color: var(--accent) !important;
+        background: var(--accent-light) !important;
+        color: var(--accent) !important;
+    }}
+
+    /* Keep accessible button names while reserving their visible space for icons. */
+    .st-key-view_switcher [data-testid="stMarkdownContainer"] {{
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        overflow: hidden !important;
+        clip-path: inset(50%) !important;
+        white-space: nowrap !important;
+    }}
+
+    :is(
+        .st-key-sidebar_nav_library,
+        .st-key-sidebar_nav_upload,
+        .st-key-sidebar_nav_appearance,
+        .st-key-sidebar_nav_session,
+        .st-key-toggle_chat,
+        .st-key-toggle_pdf,
+        .st-key-toggle_sum
+    ) {{
+        position: relative !important;
+        z-index: 1;
+    }}
+
+    :is(
+        .st-key-sidebar_nav_library,
+        .st-key-sidebar_nav_upload,
+        .st-key-sidebar_nav_appearance,
+        .st-key-sidebar_nav_session,
+        .st-key-toggle_sidebar_width,
+        .st-key-toggle_chat,
+        .st-key-toggle_pdf,
+        .st-key-toggle_sum
+    )::after {{
+        position: absolute;
+        z-index: 1000;
+        top: 50%;
+        left: calc(100% + 0.55rem);
+        display: block;
+        width: max-content;
+        max-width: min(12rem, calc(100vw - 2rem));
+        padding: 0.42rem 0.65rem;
+        transform: translateY(-50%);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--bg-card);
+        color: var(--text);
+        font-size: 0.74rem;
+        font-weight: 600;
+        line-height: 1.25;
+        white-space: nowrap;
+        box-shadow: 0 7px 18px rgba(15, 23, 42, 0.14);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: opacity 120ms ease, visibility 0s linear 120ms;
+    }}
+
+    .st-key-sidebar_nav_library::after {{ content: "Biblioteca"; }}
+    .st-key-sidebar_nav_upload::after {{ content: "Añadir PDF"; }}
+    .st-key-sidebar_nav_appearance::after {{ content: "Apariencia"; }}
+    .st-key-sidebar_nav_session::after {{ content: "Sesión"; }}
+    .st-key-toggle_sidebar_width::after {{ content: "Contraer"; }}
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) .st-key-toggle_sidebar_width::after {{ content: "Expandir"; }}
+
+    :is(
+        .st-key-sidebar_nav_library,
+        .st-key-sidebar_nav_upload,
+        .st-key-sidebar_nav_appearance,
+        .st-key-sidebar_nav_session,
+        .st-key-toggle_sidebar_width,
+        .st-key-toggle_chat,
+        .st-key-toggle_pdf,
+        .st-key-toggle_sum
+    ):hover::after,
+    :is(
+        .st-key-sidebar_nav_library,
+        .st-key-sidebar_nav_upload,
+        .st-key-sidebar_nav_appearance,
+        .st-key-sidebar_nav_session,
+        .st-key-toggle_sidebar_width,
+        .st-key-toggle_chat,
+        .st-key-toggle_pdf,
+        .st-key-toggle_sum
+    ):focus-within::after {{
+        opacity: 1;
+        visibility: visible;
+        transition: opacity 120ms ease;
+    }}
+
+    :is(.st-key-toggle_chat, .st-key-toggle_pdf, .st-key-toggle_sum)::after {{
+        right: calc(100% + 0.55rem);
+        left: auto;
+    }}
+
+    .st-key-toggle_chat::after {{ content: "Chat"; }}
+    .st-key-toggle_pdf::after {{ content: "PDF"; }}
+    .st-key-toggle_sum::after {{ content: "Resumen"; }}
+
+    .st-key-sidebar_nav_library:hover,
+    .st-key-sidebar_nav_upload:hover,
+    .st-key-sidebar_nav_appearance:hover,
+    .st-key-sidebar_nav_session:hover,
+    .st-key-toggle_sidebar_width:hover,
+    .st-key-toggle_chat:hover,
+    .st-key-toggle_pdf:hover,
+    .st-key-toggle_sum:hover,
+    .st-key-sidebar_nav_library:focus-within,
+    .st-key-sidebar_nav_upload:focus-within,
+    .st-key-sidebar_nav_appearance:focus-within,
+    .st-key-sidebar_nav_session:focus-within,
+    .st-key-toggle_sidebar_width:focus-within,
+    .st-key-toggle_chat:focus-within,
+    .st-key-toggle_pdf:focus-within,
+    .st-key-toggle_sum:focus-within {{
+        z-index: 1001 !important;
+    }}
+
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) {{
+        overflow: visible !important;
+    }}
+
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) [data-testid="stSidebarContent"] {{
+        overflow: visible !important;
+    }}
+
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) {{
+        width: 4.75rem !important;
+        min-width: 4.75rem !important;
+        max-width: 4.75rem !important;
+        flex-basis: 4.75rem !important;
+    }}
+
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) [data-testid="stSidebarContent"] {{
+        padding-right: 0.4rem !important;
+        padding-left: 0.4rem !important;
+    }}
+
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) .sidebar-brand {{
+        justify-content: center !important;
+        padding-bottom: 0.7rem !important;
+        margin-bottom: 0.65rem !important;
+    }}
+
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) .sidebar-brand > div:not(.brand-mark) {{
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        overflow: hidden !important;
+        clip-path: inset(50%) !important;
+        white-space: nowrap !important;
+    }}
+
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) .st-key-sidebar_nav [data-testid="stButton"],
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) .st-key-sidebar_toggle [data-testid="stButton"] {{
+        width: 48px !important;
+        min-width: 48px !important;
+        margin: 0.12rem auto !important;
+    }}
+
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) .st-key-sidebar_nav button,
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) .st-key-sidebar_toggle button {{
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 44px !important;
+        min-width: 44px !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        padding: 0 !important;
+    }}
+
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) .st-key-sidebar_toggle button {{
+        background: transparent !important;
+        color: var(--text-muted) !important;
+    }}
+
+    [data-testid="stSidebar"]:has(#sidebar_compact_marker) .st-key-toggle_sidebar_width [data-testid="stButton"] {{
+        width: 44px !important;
+        min-width: 44px !important;
+        margin: 0 !important;
+    }}
+
+    .panel-heading {{
+        padding: 0.15rem 0 0.65rem;
+        margin-bottom: 0.55rem;
+        border-bottom: 1px solid var(--border);
+    }}
+
+    .panel-kicker {{
+        color: var(--text-muted);
+        font-size: 0.6rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+    }}
+
+    .panel-title {{
+        margin-top: 0.18rem;
+        color: var(--text);
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+    }}
+
+    .panel-description {{
+        margin-top: 0.15rem;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        line-height: 1.45;
+    }}
+
+    [data-testid="stChatMessage"] {{
+        margin-bottom: 0.55rem !important;
+        padding: 0.8rem 0.95rem !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 12px !important;
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+        box-shadow: none !important;
+    }}
+
+    [data-testid="stChatMessage"] [data-testid="stMarkdownContainer"],
+    [data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stChatMessage"] li {{
+        color: var(--text) !important;
+        line-height: 1.62 !important;
+    }}
+
+    [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {{
+        background: var(--accent-light) !important;
+    }}
+
+    [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {{
+        border-color: var(--border) !important;
+    }}
+
+    .st-key-chat_feed [data-testid="stVerticalBlockBorderWrapper"] {{
+        overflow-anchor: none !important;
+        overscroll-behavior: contain !important;
+        scrollbar-color: var(--border-hover) transparent;
+    }}
+
+    .st-key-chat_panel {{
+        box-sizing: border-box !important;
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 0 0 auto !important;
+        height: calc(100dvh - 7rem) !important;
+        min-height: 28rem !important;
+        overflow: hidden !important;
+    }}
+
+    .st-key-chat_panel > [data-testid="stElementContainer"],
+    .st-key-chat_panel > .st-key-chat_feed,
+    .st-key-chat_panel > .st-key-chat_composer {{
+        flex-shrink: 0;
+    }}
+
+    .st-key-chat_panel > [data-testid="stLayoutWrapper"]:has(.st-key-chat_feed) {{
+        flex: 1 1 0 !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+    }}
+
+    .st-key-chat_panel .st-key-chat_feed {{
+        box-sizing: border-box !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        overflow: auto !important;
+    }}
+
+    .st-key-chat_feed > [data-testid="stLayoutWrapper"] {{
+        flex: 1 1 0 !important;
+        height: auto !important;
+        min-height: 0 !important;
+    }}
+
+    .st-key-chat_feed > [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlockBorderWrapper"] {{
+        height: 100% !important;
+        min-height: 0 !important;
+    }}
+
+    .st-key-chat_composer {{
+        position: sticky !important;
+        bottom: 0 !important;
+        z-index: 20 !important;
+        flex: 0 0 auto !important;
+        margin-top: auto !important;
+        padding: 0.45rem 0 0.25rem !important;
+        background: var(--bg-base) !important;
+    }}
+
+    [data-testid="stChatInput"] {{
+        position: relative !important;
+        width: 100% !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 12px !important;
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+        box-shadow: 0 4px 14px color-mix(in srgb, var(--text) 7%, transparent) !important;
+    }}
+
+    [data-testid="stChatInput"] > div {{
+        border-color: var(--border) !important;
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+    }}
+
+    [data-testid="stChatInput"] textarea {{
+        color: var(--text) !important;
+    }}
+
+    [data-testid="stChatInput"] textarea::placeholder {{
+        color: var(--text-muted) !important;
+        opacity: 1 !important;
+    }}
+
+    [data-testid="stChatInputSubmitButton"] {{
+        background: var(--accent-light) !important;
+        color: var(--accent) !important;
+    }}
+
+    [data-testid="stChatInputSubmitButton"]:disabled {{
+        background: var(--border) !important;
+        color: var(--text-muted) !important;
+        opacity: 0.8 !important;
+    }}
+
+    [data-testid="stChatInput"]:focus-within {{
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 2px var(--accent-light) !important;
+    }}
+
+    [data-testid="stMarkdownContainer"],
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stWidgetLabel"],
+    [data-testid="stWidgetLabel"] p,
+    [data-testid="stCheckbox"] label,
+    [data-testid="stCheckbox"] label p,
+    [data-testid="stFileUploader"] label,
+    [data-testid="stSelectbox"] label,
+    [data-testid="stTextInput"] label,
+    [data-testid="stSlider"] label {{
+        color: var(--text) !important;
+    }}
+
+    [data-testid="stBaseButton-primary"] [data-testid="stMarkdownContainer"],
+    [data-testid="stBaseButton-primary"] [data-testid="stMarkdownContainer"] p {{
+        color: var(--accent-ink) !important;
+    }}
+
+    [data-testid="stCaptionContainer"],
+    [data-testid="stCaptionContainer"] p,
+    [data-testid="stHelp"] {{
+        color: var(--text-muted) !important;
+    }}
+
+    [data-testid="stSelectbox"] [data-baseweb="select"] > div,
+    [data-testid="stTextInput"] [data-baseweb="input"] > div,
+    [data-testid="stTextArea"] [data-baseweb="textarea"] > div {{
+        border-color: var(--border) !important;
+        border-radius: 9px !important;
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+    }}
+
+    [data-testid="stSelectbox"] [data-baseweb="select"] *,
+    [data-testid="stTextInput"] input,
+    [data-testid="stTextArea"] textarea {{
+        color: var(--text) !important;
+    }}
+
+    [data-baseweb="select"] > div {{
+        border: 1px solid var(--border) !important;
+        border-radius: 9px !important;
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+    }}
+
+    [data-baseweb="select"] [role="combobox"],
+    [data-baseweb="select"] [role="combobox"] * {{
+        background-color: transparent !important;
+        color: var(--text) !important;
+    }}
+
+    [data-testid="stSelectbox"] [role="group"] {{
+        min-height: 42px !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 9px !important;
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+    }}
+
+    [data-testid="stSelectbox"] input[role="combobox"] {{
+        background: transparent !important;
+        color: var(--text) !important;
+        caret-color: var(--accent) !important;
+    }}
+
+    [data-testid="stSelectbox"] button[aria-haspopup="listbox"] {{
+        background: transparent !important;
+        color: var(--text) !important;
+    }}
+
+    [role="listbox"],
+    [role="option"] {{
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+    }}
+
+    [role="option"][aria-selected="true"],
+    [role="option"]:hover {{
+        background: var(--accent-light) !important;
+        color: var(--text) !important;
+    }}
+
+    [data-baseweb="popover"] [role="listbox"],
+    [data-baseweb="popover"] [role="option"] {{
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+    }}
+
+    [data-baseweb="popover"] [role="option"]:hover,
+    [data-baseweb="popover"] [aria-selected="true"] {{
+        background: var(--accent-light) !important;
+    }}
+
+    [data-testid="stCheckbox"] input {{
+        accent-color: var(--accent) !important;
+    }}
+
+    [data-testid="stFileUploader"] {{
+        color: var(--text) !important;
+    }}
+
+    [data-testid="stFileUploader"] section {{
+        border: 1px dashed var(--border-hover) !important;
+        border-radius: 12px !important;
+        background: var(--bg-card) !important;
+    }}
+
+    [data-testid="stFileUploader"] button {{
+        border: 1px solid var(--border) !important;
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+    }}
+
+    [data-testid="stExpander"] {{
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        background: var(--bg-card) !important;
+    }}
+
+    [data-testid="stToast"] {{
+        box-sizing: border-box !important;
+        max-width: min(270px, calc(100vw - 1.5rem)) !important;
+        padding: 0.35rem 0.55rem !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 11px !important;
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+        font-size: 0.74rem !important;
+        box-shadow: 0 8px 22px color-mix(in srgb, var(--text) 12%, transparent) !important;
+    }}
+
+    [data-testid="stToast"] [data-testid="stMarkdownContainer"],
+    [data-testid="stToast"] [data-testid="stMarkdownContainer"] p {{
+        color: var(--text) !important;
     }}
 
     .summary-box {{
-        background-color: var(--bg-card);
+        box-sizing: border-box;
+        min-height: min(55dvh, 42rem);
+        padding: 1.2rem;
+        overflow: auto;
         border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 18px;
-        height: 720px;
-        overflow-y: auto;
-        font-size: 0.91rem;
-        line-height: 1.62;
+        border-radius: 12px;
+        background: var(--bg-card);
+        color: var(--text);
+        line-height: 1.7;
+    }}
+
+    .empty-document {{
+        display: grid;
+        min-height: 340px;
+        align-content: center;
+        justify-items: center;
+        padding: 1.5rem;
+        border: 1px dashed var(--border-hover);
+        border-radius: 14px;
+        background: var(--bg-card);
+        text-align: center;
+    }}
+
+    .empty-document-mark {{
+        display: grid;
+        place-items: center;
+        width: 52px;
+        height: 60px;
+        margin-bottom: 0.9rem;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--bg-base);
+        color: var(--accent);
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+    }}
+
+    .empty-document-title {{
+        color: var(--text);
+        font-size: 1rem;
+        font-weight: 700;
+    }}
+
+    .empty-document-copy {{
+        max-width: 34ch;
+        margin-top: 0.4rem;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        line-height: 1.55;
+    }}
+
+    a.doc-cite-link {{
+        color: var(--accent) !important;
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+        background: var(--accent-light);
+    }}
+
+    :is(button, input, textarea, [role="combobox"], [tabindex]):focus-visible {{
+        outline: 2px solid var(--accent) !important;
+        outline-offset: 2px !important;
+    }}
+
+    ::selection {{
+        background: var(--accent-light);
         color: var(--text);
     }}
 
-    /* Enlaces a citas clickeables en markdown */
-    a.doc-cite-link {{
-        color: var(--accent) !important;
-        font-weight: 600;
-        text-decoration: underline;
-        cursor: pointer;
-        background-color: var(--accent-light);
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 0.85rem;
+    ::-webkit-scrollbar {{
+        width: 8px;
+        height: 8px;
+    }}
+
+    ::-webkit-scrollbar-track {{
+        background: transparent;
+    }}
+
+    ::-webkit-scrollbar-thumb {{
+        border: 2px solid transparent;
+        border-radius: 8px;
+        background: var(--border-hover);
+        background-clip: padding-box;
+    }}
+
+    @media (min-width: 641px) and (max-width: 900px) {{
+        [data-testid="stAppViewContainer"] [data-testid="stMain"] {{
+            position: relative !important;
+            inset: auto !important;
+            width: auto !important;
+            min-width: 0 !important;
+            flex: 1 1 auto !important;
+        }}
+    }}
+
+    @media (max-width: 1100px) {{
+        .stHorizontalBlock:has(> [data-testid="stColumn"] [data-testid="stChatMessage"]) {{
+            flex-wrap: wrap !important;
+        }}
+
+        .stHorizontalBlock:has(> [data-testid="stColumn"] [data-testid="stChatMessage"]) > [data-testid="stColumn"] {{
+            flex: 1 1 340px !important;
+            min-width: min(100%, 340px) !important;
+        }}
+    }}
+
+    @media (max-width: 900px) {{
+        [data-testid="stMainBlockContainer"] {{
+            padding-right: 4.75rem !important;
+            padding-left: 0.85rem !important;
+        }}
+
+        [data-testid="stAppViewContainer"]:has(#sidebar_compact_marker) [data-testid="stMain"] {{
+            position: relative !important;
+            inset: auto !important;
+            width: auto !important;
+            min-width: 0 !important;
+            flex: 1 1 auto !important;
+        }}
+
+        .stHorizontalBlock:has(> [data-testid="stColumn"] [data-testid="stChatMessage"]) {{
+            flex-wrap: wrap !important;
+        }}
+
+        .stHorizontalBlock:has(> [data-testid="stColumn"] [data-testid="stChatMessage"]) > [data-testid="stColumn"] {{
+            flex: 1 1 340px !important;
+            min-width: min(100%, 340px) !important;
+        }}
+    }}
+
+    @media (max-width: 640px) {{
+        [data-testid="stSidebar"] {{
+            width: min(var(--sidebar-width), 82vw) !important;
+            min-width: min(var(--sidebar-width), 82vw) !important;
+            flex-basis: min(var(--sidebar-width), 82vw) !important;
+        }}
+
+        [data-testid="stSidebar"] .st-key-toggle_sidebar_width {{
+            left: calc(min(var(--sidebar-width), 82vw) - 24px) !important;
+        }}
+
+        [data-testid="stAppViewContainer"]:has(#sidebar_compact_marker) [data-testid="stMain"] {{
+            position: relative !important;
+            inset: auto !important;
+            width: auto !important;
+            min-width: 0 !important;
+            flex: 1 1 auto !important;
+        }}
+
+        [data-testid="stMainBlockContainer"] {{
+            padding-right: 0.85rem !important;
+        }}
+
+        .st-key-view_switcher {{
+            position: static !important;
+            top: auto !important;
+            right: auto !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0.2rem 0 0.75rem !important;
+            padding: 0.25rem !important;
+            transform: none !important;
+            flex-direction: row !important;
+            justify-content: stretch !important;
+            gap: 0.25rem !important;
+            box-shadow: none !important;
+        }}
+
+        .st-key-view_switcher [data-testid="stButton"] {{
+            width: auto !important;
+            min-width: 0 !important;
+            flex: 1 1 0 !important;
+        }}
+
+        .st-key-workspace_header {{
+            padding-right: 0.2rem !important;
+            padding-left: 0.2rem !important;
+        }}
+
+        .st-key-view_switcher [data-testid="stButton"] button {{
+            width: 100% !important;
+            min-width: 0 !important;
+            height: 44px !important;
+            min-height: 44px !important;
+            justify-content: center !important;
+            gap: 0.2rem !important;
+            padding: 0.3rem 0.25rem !important;
+        }}
+
+        .st-key-view_switcher [data-testid="stMarkdownContainer"] {{
+            font-size: 0.65rem !important;
+        }}
+
+        .st-key-toggle_chat::after,
+        .st-key-toggle_pdf::after,
+        .st-key-toggle_sum::after {{
+            top: calc(100% + 0.45rem);
+            right: auto;
+            left: 50%;
+            transform: translateX(-50%);
+        }}
+
+        .st-key-chat_panel {{
+            height: calc(100dvh - 6rem) !important;
+            min-height: 24rem !important;
+        }}
+
+        [data-testid="stChatMessage"] {{
+            padding: 0.7rem 0.8rem !important;
+        }}
+
+        .empty-document {{
+            min-height: 260px;
+        }}
+    }}
+
+    @media (prefers-reduced-motion: reduce) {{
+        [data-testid="stSidebar"],
+        .st-key-view_switcher [data-testid="stButton"] button {{
+            transition: none !important;
+        }}
+
+        :is(
+            .st-key-sidebar_nav_library,
+            .st-key-sidebar_nav_upload,
+            .st-key-sidebar_nav_appearance,
+            .st-key-sidebar_nav_session,
+            .st-key-toggle_sidebar_width,
+            .st-key-toggle_chat,
+            .st-key-toggle_pdf,
+            .st-key-toggle_sum
+        )::after {{
+            transition: none !important;
+        }}
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -875,7 +1843,7 @@ def render_continuous_pdf_viewer_html(file_bytes: bytes, target_page: int, highl
           height: 100%;
           background: {v_bg_base};
           color: {v_text};
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI Variable", sans-serif;
           overflow: hidden;
         }}
         #pdf-toolbar {{
@@ -1133,20 +2101,48 @@ def render_continuous_pdf_viewer_html(file_bytes: bytes, target_page: int, highl
     return html_code
 
 
-# --- BARRA LATERAL (MINIMALISTA) ---
-with st.sidebar:
-    st.markdown("""
-        <div style="margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
-            <div style="font-weight: 600; font-size: 1.05rem; letter-spacing: -0.01em; color: var(--text);">Document Studio</div>
-            <div style="font-size: 0.75rem; color: var(--text-muted);">Consultas y navegación textual + visual</div>
-        </div>
-    """, unsafe_allow_html=True)
+# --- NAVEGACIÓN MODULAR DE LA BARRA LATERAL ---
+SIDEBAR_MODULES = [
+    ("library", "Biblioteca", ":material/folder_open:", "Documentos indexados"),
+    ("upload", "Añadir PDF", ":material/upload_file:", "Cargar e indexar un PDF"),
+    ("appearance", "Apariencia", ":material/palette:", "Temas y colores"),
+    ("session", "Sesión", ":material/tune:", "Conversación y opciones de sesión"),
+]
 
-    setup_database_cached()
+def render_sidebar_rail():
+    st.markdown('<div class="sidebar-rail-mark">D</div>', unsafe_allow_html=True)
+    with st.container(key="sidebar_toggle"):
+        toggle_label = "Mostrar panel" if st.session_state.sidebar_collapsed else "Contraer panel"
+        if st.button(
+            toggle_label,
+            icon=":material/chevron_right:" if st.session_state.sidebar_collapsed else ":material/chevron_left:",
+            use_container_width=True,
+            key="toggle_sidebar_width",
+        ):
+            st.session_state.sidebar_collapsed = not st.session_state.sidebar_collapsed
+            st.rerun()
+
+    with st.container(key="sidebar_nav"):
+        for module_key, module_label, module_icon, module_help in SIDEBAR_MODULES:
+            if st.button(
+                module_label,
+                icon=module_icon,
+                type="primary" if st.session_state.sidebar_module == module_key else "secondary",
+                use_container_width=True,
+                key=f"sidebar_nav_{module_key}",
+            ):
+                st.session_state.sidebar_module = module_key
+                if st.session_state.sidebar_collapsed:
+                    st.session_state.sidebar_collapsed = False
+                st.toast(f"{module_label} abierto", icon=module_icon)
+                st.rerun()
+
+
+with st.sidebar:
+    db_ready = setup_database_cached()
     indexed_docs = get_indexed_documents()
     doc_names = [d["filename"] for d in indexed_docs]
 
-    # Carga automática del primer documento
     if doc_names and (not st.session_state.file_bytes or not st.session_state.active_doc):
         first_doc = doc_names[0]
         st.session_state.active_doc = first_doc
@@ -1156,242 +2152,267 @@ with st.sidebar:
         st.session_state.full_doc_text = txt
         st.session_state.active_page = 1
 
-    st.markdown("<div style='font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;'>DOCUMENTO ACTIVO</div>", unsafe_allow_html=True)
-    if doc_names:
-        options = [ALL_DOCS_OPTION] + doc_names
-        curr_idx = options.index(st.session_state.active_doc) if st.session_state.active_doc in options else 1
-
-        selected_doc = st.selectbox(
-            "Documento:",
-            options=options,
-            index=curr_idx,
-            label_visibility="collapsed"
-        )
-
-        if selected_doc == ALL_DOCS_OPTION:
-            if st.session_state.active_doc != ALL_DOCS_OPTION:
-                st.session_state.active_doc = ALL_DOCS_OPTION
+    if not st.session_state.get("ui_mount_notified"):
+        st.session_state.ui_mount_notified = True
+        if db_ready:
+            st.toast("Document Studio listo", icon=":material/description:")
         else:
-            if selected_doc != st.session_state.active_doc or not st.session_state.file_bytes:
-                st.session_state.active_doc = selected_doc
-                st.session_state.file_name = selected_doc
-                b, txt = load_pdf_data(selected_doc)
-                st.session_state.file_bytes = b
-                st.session_state.full_doc_text = txt
-                st.session_state.active_page = 1
+            st.toast("Modo vista: sin PostgreSQL", icon=":material/info:")
 
-        if selected_doc != ALL_DOCS_OPTION:
-            if st.button("Eliminar documento", use_container_width=True):
-                delete_document_from_db(selected_doc)
-                st.session_state.active_doc = ALL_DOCS_OPTION
-                st.session_state.file_name = ""
-                st.session_state.file_bytes = None
-                st.session_state.full_doc_text = ""
-                st.rerun()
+    if st.session_state.sidebar_collapsed:
+        st.markdown('<div id="sidebar_compact_marker" aria-hidden="true"></div>', unsafe_allow_html=True)
+        with st.container(key="sidebar_rail"):
+            render_sidebar_rail()
     else:
-        st.caption("No hay documentos indexados.")
+        rail_column, module_column = st.columns([0.19, 0.81], gap="small")
+        with rail_column:
+            with st.container(key="sidebar_rail"):
+                render_sidebar_rail()
+        with module_column:
+            st.markdown('<div class="sidebar-panel-brand">Document Studio</div>', unsafe_allow_html=True)
+            st.markdown("<hr style='margin: 8px 0 14px; border: none; border-top: 1px solid var(--border);'>", unsafe_allow_html=True)
+            if st.session_state.sidebar_module == "library":
+                st.markdown('<div class="sidebar-section-label">BIBLIOTECA</div>', unsafe_allow_html=True)
+                if doc_names:
+                    options = [ALL_DOCS_OPTION] + doc_names
+                    curr_idx = options.index(st.session_state.active_doc) if st.session_state.active_doc in options else 1
+                    selected_doc = st.selectbox(
+                        "Documento:",
+                        options=options,
+                        index=curr_idx,
+                        label_visibility="collapsed",
+                        key="library_document_selector",
+                    )
 
-    st.markdown("<hr style='margin: 12px 0; border: none; border-top: 1px solid var(--border);'>", unsafe_allow_html=True)
+                    if selected_doc == ALL_DOCS_OPTION:
+                        if st.session_state.active_doc != ALL_DOCS_OPTION:
+                            st.session_state.active_doc = ALL_DOCS_OPTION
+                            st.toast("Mostrando todos los documentos", icon=":material/library_books:")
+                    elif selected_doc != st.session_state.active_doc or not st.session_state.file_bytes:
+                        st.session_state.active_doc = selected_doc
+                        st.session_state.file_name = selected_doc
+                        b, txt = load_pdf_data(selected_doc)
+                        st.session_state.file_bytes = b
+                        st.session_state.full_doc_text = txt
+                        st.session_state.active_page = 1
+                        st.toast("Documento seleccionado", icon=":material/article:")
 
-    # Subida de archivo
-    st.markdown("<div style='font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;'>CARGAR PDF (HASTA 30 PÁGS)</div>", unsafe_allow_html=True)
-    uploaded_file = st.file_uploader(
-        "PDF:",
-        type=["pdf"],
-        label_visibility="collapsed"
-    )
-
-    analyze_imgs_opt = st.checkbox("Analizar imágenes con IA de visión", value=True, help="Desactiva si el PDF solo contiene texto para indexar en menos de 2 segundos.")
-
-    if uploaded_file is not None:
-        file_bytes = uploaded_file.read()
-        if st.button("Procesar e indexar", use_container_width=True):
-            prog_bar = st.progress(0, text="Iniciando procesamiento...")
-            def update_prog(pct, msg):
-                prog_bar.progress(min(pct, 0.95), text=msg)
-
-            chunks_res, full_text_res = process_pdf(
-                file_bytes=file_bytes,
-                filename=uploaded_file.name,
-                chunk_size=st.session_state.chunk_size,
-                chunk_overlap=st.session_state.chunk_overlap,
-                provider=st.session_state.ai_provider,
-                api_key=st.session_state.cloud_api_key,
-                analyze_images=analyze_imgs_opt,
-                progress_cb=update_prog
-            )
-
-            if chunks_res is None:
-                st.error(full_text_res)
-            else:
-                try:
-                    prog_bar.progress(0.96, text="Guardando vectores en base de datos...")
-                    con = get_db()
-                    con.run("DELETE FROM document_chunks WHERE filename = :fname;", fname=uploaded_file.name)
-                    
-                    # Generar embeddings e insertar
-                    for idx, item in enumerate(chunks_res):
-                        emb_vec = generate_embedding(item["text"])
-                        con.run(
-                            """
-                            INSERT INTO document_chunks (filename, page_number, chunk_index, chunk_type, content, embedding)
-                            VALUES (:fname, :pnum, :cidx, :ctype, :cont, :emb::vector);
-                            """,
-                            fname=uploaded_file.name,
-                            pnum=item["page"],
-                            cidx=idx,
-                            ctype=item.get("type", "text"),
-                            cont=item["text"],
-                            emb=json.dumps(emb_vec)
-                        )
-                    con.close()
-
-                    # Resumen diferido (bajo demanda en el panel de resumen para máxima velocidad de subida)
-                    st.session_state.summary = ""
-
-                    # Limpiar caches para reflejar el nuevo documento inmediatamente
-                    get_indexed_documents.clear()
-                    load_pdf_data.clear()
-                    render_continuous_pdf_viewer_html.clear()
-
-                    st.session_state.file_bytes = file_bytes
-                    st.session_state.file_name = uploaded_file.name
-                    st.session_state.active_doc = uploaded_file.name
-                    st.session_state.full_doc_text = full_text_res
-                    st.session_state.active_page = 1
-                    prog_bar.progress(1.0, text="¡Completado!")
-                    st.success("¡Documento indexado con éxito!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
-
-    # Acciones de sesión
-    st.markdown("<hr style='margin: 12px 0; border: none; border-top: 1px solid var(--border);'>", unsafe_allow_html=True)
-    if st.button("Limpiar conversación", use_container_width=True):
-        st.session_state.messages = [
-            {"role": "assistant", "content": "Conversación reiniciada. ¿Qué consulta deseas realizar?"}
-        ]
-        st.session_state.highlight_words = []
-        st.rerun()
-
-    # --- SECCIÓN DE TEMAS Y PERSONALIZACIÓN COMPLETA ---
-    st.markdown("<hr style='margin: 12px 0; border: none; border-top: 1px solid var(--border);'>", unsafe_allow_html=True)
-    st.markdown("<div style='font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;'>APARIENCIA & TEMAS</div>", unsafe_allow_html=True)
-
-    theme_options = list(ALL_THEMES.keys()) + ["🎨 Personalizado"]
-    current_selected_idx = theme_options.index(st.session_state.app_theme) if st.session_state.app_theme in theme_options else 0
-
-    theme_pick = st.selectbox(
-        "Tema:",
-        options=theme_options,
-        index=current_selected_idx,
-        label_visibility="collapsed"
-    )
-
-    if theme_pick != st.session_state.app_theme:
-        st.session_state.app_theme = theme_pick
-        if theme_pick in ALL_THEMES:
-            st.session_state.live_custom = dict(ALL_THEMES[theme_pick])
-        st.rerun()
-
-    # Panel de personalización interactiva
-    if st.session_state.app_theme == "🎨 Personalizado":
-        with st.expander("🛠️ Personalizador de Paleta", expanded=True):
-            st.caption("Selecciona con el cuentagotas/paleta los colores exactos para cada elemento:")
-
-            c_col1, c_col2 = st.columns(2)
-            with c_col1:
-                new_bg_base = st.color_picker("Fondo principal", st.session_state.live_custom["bg_base"])
-                new_bg_card = st.color_picker("Tarjetas / Bloques", st.session_state.live_custom["bg_card"])
-                new_bg_sidebar = st.color_picker("Barra lateral", st.session_state.live_custom["bg_sidebar"])
-                new_border = st.color_picker("Bordes", st.session_state.live_custom["border"])
-
-            with c_col2:
-                new_text = st.color_picker("Texto principal", st.session_state.live_custom["text"])
-                new_text_muted = st.color_picker("Texto secundario", st.session_state.live_custom["text_muted"])
-                new_accent = st.color_picker("Color de acento", st.session_state.live_custom["accent"])
-                new_border_hover = st.color_picker("Bordes al pasar mouse", st.session_state.live_custom["border_hover"])
-
-            changed = False
-            for k, val in [
-                ("bg_base", new_bg_base),
-                ("bg_card", new_bg_card),
-                ("bg_sidebar", new_bg_sidebar),
-                ("border", new_border),
-                ("border_hover", new_border_hover),
-                ("accent", new_accent),
-                ("text", new_text),
-                ("text_muted", new_text_muted)
-            ]:
-                if st.session_state.live_custom[k] != val:
-                    st.session_state.live_custom[k] = val
-                    changed = True
-
-            if changed:
-                st.session_state.live_custom["accent_light"] = f"{new_accent}26"
-                st.rerun()
-
-            st.markdown("<div style='font-size: 0.75rem; font-weight: 600; color: var(--text-muted); margin-top: 10px;'>GUARDAR COMBINACIÓN</div>", unsafe_allow_html=True)
-            theme_name_input = st.text_input("Nombre del nuevo tema:", placeholder="Ej. Mi Azul Índigo", label_visibility="collapsed")
-            if st.button("💾 Guardar este tema", use_container_width=True):
-                t_name = theme_name_input.strip()
-                if t_name:
-                    st.session_state.saved_custom_themes[t_name] = dict(st.session_state.live_custom)
-                    save_custom_themes(st.session_state.saved_custom_themes)
-                    st.session_state.app_theme = t_name
-                    st.success(f"Tema '{t_name}' guardado correctamente.")
-                    st.rerun()
+                    if selected_doc != ALL_DOCS_OPTION:
+                        if st.button("Eliminar documento", icon=":material/delete:", use_container_width=True, key="delete_document"):
+                            deleted = delete_document_from_db(selected_doc)
+                            st.session_state.active_doc = ALL_DOCS_OPTION
+                            st.session_state.file_name = ""
+                            st.session_state.file_bytes = None
+                            st.session_state.full_doc_text = ""
+                            if deleted:
+                                st.toast("Documento eliminado", icon=":material/delete:")
+                            else:
+                                st.toast("No se pudo eliminar el documento", icon=":material/error:")
+                            st.rerun()
                 else:
-                    st.warning("Introduce un nombre para guardar el tema.")
+                    st.caption("No hay documentos indexados. Carga un PDF para empezar.")
 
-    if st.session_state.app_theme in st.session_state.saved_custom_themes:
-        st.markdown(f"<div style='font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;'>Gestionar tema '{st.session_state.app_theme}':</div>", unsafe_allow_html=True)
-        if st.button(f"🗑️ Eliminar tema '{st.session_state.app_theme}'", use_container_width=True):
-            deleted_name = st.session_state.app_theme
-            del st.session_state.saved_custom_themes[deleted_name]
-            save_custom_themes(st.session_state.saved_custom_themes)
-            st.session_state.app_theme = "Minimal Dark (Grafito)"
-            st.success(f"Tema '{deleted_name}' eliminado.")
-            st.rerun()
+            elif st.session_state.sidebar_module == "upload":
+                st.markdown('<div class="sidebar-section-label">AÑADIR DOCUMENTO</div>', unsafe_allow_html=True)
+                st.caption("PDF de hasta 30 páginas")
+                uploaded_file = st.file_uploader(
+                    "Selecciona un PDF",
+                    type=["pdf"],
+                    label_visibility="collapsed",
+                    key="document_pdf_upload",
+                )
+                analyze_imgs_opt = st.checkbox(
+                    "Analizar imágenes con IA de visión",
+                    value=True,
+                    key="analyze_images_option",
+                )
+                st.caption("Desactívalo si el PDF solo contiene texto; así se indexa más rápido.")
 
+                if uploaded_file is not None:
+                    file_bytes = uploaded_file.read()
+                    if st.button("Procesar e indexar", icon=":material/drive_file_move:", use_container_width=True, key="process_pdf"):
+                        st.toast("Preparando el documento", icon=":material/hourglass_top:")
+                        prog_bar = st.progress(0, text="Iniciando procesamiento...")
 
-# --- BARRA SUPERIOR: VISTAS INDEPENDIENTES ---
-col_h_brand, col_btn_chat, col_btn_pdf, col_btn_sum = st.columns([0.46, 0.18, 0.18, 0.18], gap="small")
+                        def update_prog(pct, msg):
+                            prog_bar.progress(min(pct, 0.95), text=msg)
 
-with col_h_brand:
+                        chunks_res, full_text_res = process_pdf(
+                            file_bytes=file_bytes,
+                            filename=uploaded_file.name,
+                            chunk_size=st.session_state.chunk_size,
+                            chunk_overlap=st.session_state.chunk_overlap,
+                            provider=st.session_state.ai_provider,
+                            api_key=st.session_state.cloud_api_key,
+                            analyze_images=analyze_imgs_opt,
+                            progress_cb=update_prog,
+                        )
+
+                        if chunks_res is None:
+                            st.error(full_text_res)
+                            st.toast("No se pudo procesar el PDF", icon=":material/error:")
+                        else:
+                            try:
+                                prog_bar.progress(0.96, text="Guardando vectores en base de datos...")
+                                con = get_db()
+                                con.run("DELETE FROM document_chunks WHERE filename = :fname;", fname=uploaded_file.name)
+                                for idx, item in enumerate(chunks_res):
+                                    emb_vec = generate_embedding(item["text"])
+                                    con.run(
+                                        """
+                                        INSERT INTO document_chunks (filename, page_number, chunk_index, chunk_type, content, embedding)
+                                        VALUES (:fname, :pnum, :cidx, :ctype, :cont, :emb::vector);
+                                        """,
+                                        fname=uploaded_file.name,
+                                        pnum=item["page"],
+                                        cidx=idx,
+                                        ctype=item.get("type", "text"),
+                                        cont=item["text"],
+                                        emb=json.dumps(emb_vec),
+                                    )
+                                con.close()
+
+                                st.session_state.summary = ""
+                                get_indexed_documents.clear()
+                                load_pdf_data.clear()
+                                render_continuous_pdf_viewer_html.clear()
+                                st.session_state.file_bytes = file_bytes
+                                st.session_state.file_name = uploaded_file.name
+                                st.session_state.active_doc = uploaded_file.name
+                                st.session_state.full_doc_text = full_text_res
+                                st.session_state.active_page = 1
+                                prog_bar.progress(1.0, text="Completado")
+                                st.toast("PDF indexado correctamente", icon=":material/check_circle:")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error: {e}")
+                                st.toast("Falló el guardado del documento", icon=":material/error:")
+
+            elif st.session_state.sidebar_module == "appearance":
+                st.markdown('<div class="sidebar-section-label">APARIENCIA</div>', unsafe_allow_html=True)
+                theme_options = list(ALL_THEMES.keys()) + ["🎨 Personalizado"]
+                current_selected_idx = theme_options.index(st.session_state.app_theme) if st.session_state.app_theme in theme_options else 0
+                theme_pick = st.selectbox(
+                    "Tema:",
+                    options=theme_options,
+                    index=current_selected_idx,
+                    label_visibility="collapsed",
+                    key="appearance_theme_selector",
+                )
+
+                if theme_pick != st.session_state.app_theme:
+                    st.session_state.app_theme = theme_pick
+                    if theme_pick in ALL_THEMES:
+                        st.session_state.live_custom = dict(ALL_THEMES[theme_pick])
+                    st.toast(f"Tema {theme_pick} aplicado", icon=":material/palette:")
+                    st.rerun()
+
+                if st.session_state.app_theme == "🎨 Personalizado":
+                    with st.expander("Personalizar paleta", expanded=True):
+                        st.caption("Ajusta los colores de la interfaz.")
+                        c_col1, c_col2 = st.columns(2)
+                        with c_col1:
+                            new_bg_base = st.color_picker("Fondo principal", st.session_state.live_custom["bg_base"])
+                            new_bg_card = st.color_picker("Paneles", st.session_state.live_custom["bg_card"])
+                            new_bg_sidebar = st.color_picker("Barra lateral", st.session_state.live_custom["bg_sidebar"])
+                            new_border = st.color_picker("Bordes", st.session_state.live_custom["border"])
+                        with c_col2:
+                            new_text = st.color_picker("Texto principal", st.session_state.live_custom["text"])
+                            new_text_muted = st.color_picker("Texto secundario", st.session_state.live_custom["text_muted"])
+                            new_accent = st.color_picker("Acento", st.session_state.live_custom["accent"])
+                            new_border_hover = st.color_picker("Borde al pasar", st.session_state.live_custom["border_hover"])
+
+                        changed = False
+                        for k, val in [
+                            ("bg_base", new_bg_base), ("bg_card", new_bg_card),
+                            ("bg_sidebar", new_bg_sidebar), ("border", new_border),
+                            ("border_hover", new_border_hover), ("accent", new_accent),
+                            ("text", new_text), ("text_muted", new_text_muted),
+                        ]:
+                            if st.session_state.live_custom[k] != val:
+                                st.session_state.live_custom[k] = val
+                                changed = True
+                        if changed:
+                            st.session_state.live_custom["accent_light"] = f"{new_accent}26"
+                            st.rerun()
+
+                        theme_name_input = st.text_input("Nombre del tema", placeholder="Ej. Mi tema")
+                        if st.button("Guardar tema", icon=":material/save:", use_container_width=True, key="save_custom_theme"):
+                            t_name = theme_name_input.strip()
+                            if t_name:
+                                st.session_state.saved_custom_themes[t_name] = dict(st.session_state.live_custom)
+                                save_custom_themes(st.session_state.saved_custom_themes)
+                                st.session_state.app_theme = t_name
+                                st.toast("Tema guardado", icon=":material/check_circle:")
+                                st.rerun()
+                            else:
+                                st.toast("Escribe un nombre para guardar el tema", icon=":material/warning:")
+
+                if st.session_state.app_theme in st.session_state.saved_custom_themes:
+                    st.caption(f"Tema personalizado: {st.session_state.app_theme}")
+                    if st.button("Eliminar tema personalizado", icon=":material/delete:", use_container_width=True, key="delete_custom_theme"):
+                        deleted_name = st.session_state.app_theme
+                        del st.session_state.saved_custom_themes[deleted_name]
+                        save_custom_themes(st.session_state.saved_custom_themes)
+                        st.session_state.app_theme = "Minimal Light (Papel & Lino)"
+                        st.toast("Tema personalizado eliminado", icon=":material/check_circle:")
+                        st.rerun()
+
+            elif st.session_state.sidebar_module == "session":
+                st.markdown('<div class="sidebar-section-label">SESIÓN</div>', unsafe_allow_html=True)
+                st.caption(f"{len(st.session_state.messages)} mensajes en esta conversación")
+                if st.button("Limpiar conversación", icon=":material/mop:", use_container_width=True, key="clear_conversation"):
+                    st.session_state.messages = [
+                        {"role": "assistant", "content": "Conversación reiniciada. ¿Qué consulta deseas realizar?"}
+                    ]
+                    st.session_state.highlight_words = []
+                    st.toast("Conversación limpiada", icon=":material/check_circle:")
+                    st.rerun()
+                st.caption("El historial se conserva solo durante esta sesión.")
+
+# --- CABECERA STICKY Y SELECTOR DE PANELES ---
+with st.container(key="workspace_header"):
     active_label = st.session_state.file_name if st.session_state.file_name else "Todos los documentos"
     st.markdown(f"""
-        <div style="padding-top: 4px; display: flex; align-items: baseline; gap: 8px;">
-            <span style="font-weight: 700; font-size: 1.05rem; letter-spacing: -0.02em; color: var(--text);">Document Studio</span>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">/ {active_label[:34]}</span>
+        <div class="workspace-heading">
+            <div class="workspace-eyebrow">DOCUMENT STUDIO</div>
+            <div class="workspace-title">{active_label[:48]}</div>
         </div>
     """, unsafe_allow_html=True)
 
-with col_btn_chat:
-    chat_status = "Activo" if st.session_state.show_chat else "Oculto"
-    if st.button(f"Chat ({chat_status})", key="toggle_chat", type="primary" if st.session_state.show_chat else "secondary", use_container_width=True):
+with st.container(key="view_switcher"):
+    if st.button("Chat", icon=":material/chat_bubble_outline:", key="toggle_chat", type="primary" if st.session_state.show_chat else "secondary", use_container_width=True):
         st.session_state.show_chat = not st.session_state.show_chat
+        st.toast("Chat activado" if st.session_state.show_chat else "Chat ocultado", icon=":material/chat_bubble_outline:")
         st.rerun()
-
-with col_btn_pdf:
-    pdf_status = "Activo" if st.session_state.show_pdf else "Oculto"
-    if st.button(f"Documento ({pdf_status})", key="toggle_pdf", type="primary" if st.session_state.show_pdf else "secondary", use_container_width=True):
+    if st.button("Documento", icon=":material/menu_book:", key="toggle_pdf", type="primary" if st.session_state.show_pdf else "secondary", use_container_width=True):
         st.session_state.show_pdf = not st.session_state.show_pdf
+        st.toast("Visor PDF activado" if st.session_state.show_pdf else "Visor PDF ocultado", icon=":material/menu_book:")
         st.rerun()
-
-with col_btn_sum:
-    sum_status = "Activo" if st.session_state.show_summary else "Oculto"
-    if st.button(f"Resumen ({sum_status})", key="toggle_sum", type="primary" if st.session_state.show_summary else "secondary", use_container_width=True):
+    if st.button("Resumen", icon=":material/subject:", key="toggle_sum", type="primary" if st.session_state.show_summary else "secondary", use_container_width=True):
         st.session_state.show_summary = not st.session_state.show_summary
+        st.toast("Síntesis activada" if st.session_state.show_summary else "Síntesis ocultada", icon=":material/subject:")
         st.rerun()
 
 
 # --- COMPONENTES PRINCIPALES ---
 
 def render_chat(is_full=False):
+    with st.container(key="chat_panel"):
+        _render_chat_content(is_full)
+
+
+def _render_chat_content(is_full=False):
     """Panel de conversación con citas directas y menú inferior orgánico estilo ChatGPT."""
-    feed_h = 720 if is_full else 660
-    chat_box = st.container(height=feed_h)
+    st.markdown("""
+        <div class="panel-heading">
+            <div class="panel-kicker">CONSULTA DOCUMENTAL</div>
+            <div class="panel-title">Chat con el documento</div>
+            <div class="panel-description">Pregunta y sigue cada referencia hasta su página.</div>
+        </div>
+    """, unsafe_allow_html=True)
+    feed_h = 420
+    chat_box = st.container(height=feed_h, key="chat_feed")
 
     with chat_box:
         for idx_m, m in enumerate(st.session_state.messages):
@@ -1412,10 +2433,8 @@ def render_chat(is_full=False):
                                     st.session_state.active_page = int(p_num)
                                     st.session_state.highlight_words = [w for w in re.findall(r'\b[A-Za-z0-9_áéíóúÁÉÍÓÚñÑ]{3,}\b', m["content"]) if len(w) >= 3][:30]
                                     st.session_state.show_pdf = True
+                                    st.toast(f"Navegando a la página {p_num}", icon=":material/menu_book:")
                                     st.rerun()
-
-    # Input del chat
-    prompt = st.chat_input("Escribe tu consulta sobre el contenido o imágenes...")
 
     # --- BARRA INFERIOR DE CONFIGURACIÓN ORGÁNICA (ESTILO CHATGPT) ---
     with st.expander("⚙️ Parámetros de Modelo, Chunks y Vectores (Local / Nube)", expanded=False):
@@ -1427,29 +2446,39 @@ def render_chat(is_full=False):
                 "Motor de Inferencia:",
                 options=provider_list,
                 index=provider_list.index(st.session_state.ai_provider),
-                help="Elige si deseas procesar con tu servidor local (Ollama/Llama.cpp) o mediante API en la nube (Gemini / Groq / OpenAI)."
             )
+            st.caption("Elige un modelo local o un proveedor de IA en la nube.")
             if selected_provider != st.session_state.ai_provider:
                 st.session_state.ai_provider = selected_provider
                 st.rerun()
 
             # Opciones según el proveedor
             if selected_provider == "Ollama (Local)":
-                st.session_state.local_model = st.text_input("Modelo Ollama:", value=st.session_state.local_model, help="Ej: qwen2.5:7b, llama3:8b, mistral, llava")
+                st.session_state.local_model = st.text_input("Modelo Ollama:", value=st.session_state.local_model)
+                st.caption("Ejemplos: qwen2.5:7b, llama3:8b, mistral o llava.")
             elif selected_provider == "Llama.cpp Server (Local)":
-                st.session_state.llamacpp_url = st.text_input("URL Llama.cpp Server:", value=st.session_state.llamacpp_url, help="Servidor ejecutado con llama-server (puerto 8080)")
+                st.session_state.llamacpp_url = st.text_input("URL Llama.cpp Server:", value=st.session_state.llamacpp_url)
+                st.caption("Usa la URL del servidor llama-server (puerto 8080 por defecto).")
             elif "Gemini" in selected_provider:
-                st.session_state.cloud_api_key = st.text_input("Gemini API Key:", value=st.session_state.cloud_api_key, type="password", help="Tu API Key gratuita de Google AI Studio (aistudio.google.com)")
+                st.session_state.cloud_api_key = st.text_input("Gemini API Key:", value=st.session_state.cloud_api_key, type="password")
+                st.caption("Obtén tu clave en Google AI Studio.")
                 st.session_state.cloud_model_name = st.selectbox("Modelo Gemini:", ["gemini-1.5-flash", "gemini-1.5-pro"])
             elif "OpenAI" in selected_provider:
                 st.session_state.cloud_api_key = st.text_input("API Key (OpenAI o Groq):", value=st.session_state.cloud_api_key, type="password")
 
         with c_chunk:
-            st.session_state.chunk_size = st.slider("Tamaño de Chunk (caracteres):", min_value=250, max_value=1200, value=st.session_state.chunk_size, step=50, help="Longitud de texto para cada fragmento vectorial al indexar.")
-            st.session_state.chunk_overlap = st.slider("Solapamiento (Overlap):", min_value=20, max_value=200, value=st.session_state.chunk_overlap, step=10, help="Caracteres compartidos entre chunks consecutivos para mantener contexto.")
+            st.session_state.chunk_size = st.slider("Tamaño del fragmento (caracteres):", min_value=250, max_value=1200, value=st.session_state.chunk_size, step=50)
+            st.session_state.chunk_overlap = st.slider("Solapamiento entre fragmentos:", min_value=20, max_value=200, value=st.session_state.chunk_overlap, step=10)
 
         with c_topk:
-            st.session_state.top_k_chunks = st.slider("Top K Chunks recuperados:", min_value=2, max_value=12, value=st.session_state.top_k_chunks, step=1, help="Número de fragmentos más relevantes enviados al modelo.")
+            st.session_state.top_k_chunks = st.slider("Fragmentos relevantes para la respuesta:", min_value=2, max_value=12, value=st.session_state.top_k_chunks, step=1)
+
+    # El composer es el último elemento del panel para que permanezca anclado abajo.
+    with st.container(key="chat_composer"):
+        prompt = st.chat_input(
+            "Escribe tu consulta sobre el contenido o imágenes...",
+            key="document_chat_input",
+        )
 
     # Procesar consulta
     if prompt:
@@ -1460,13 +2489,16 @@ def render_chat(is_full=False):
         if clean_p in ["hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "hey", "que tal", "hola!", "holaa", "saludos"]:
             fast_ans = "¡Hola! Estoy listo para responder consultas técnicas sobre tu documento. Puedes preguntarme sobre el texto, pasos o sobre cualquier imagen que contenga."
             st.session_state.messages.append({"role": "assistant", "content": fast_ans})
+            st.toast("Respuesta rápida lista", icon=":material/check_circle:")
             st.rerun()
         elif clean_p in ["gracias", "muchas gracias", "ok gracias", "vale gracias", "perfecto gracias"]:
             fast_ans = "¡Con gusto! Quedo a tu disposición si necesitas verificar cualquier otro dato o página."
             st.session_state.messages.append({"role": "assistant", "content": fast_ans})
+            st.toast("Conversación actualizada", icon=":material/check_circle:")
             st.rerun()
 
         # Vía 2: Consulta Documental RAG
+        st.toast("Buscando referencias en el documento", icon=":material/search:")
         context_rag, t_file, t_page, t_content = retrieve_rag_context(prompt, st.session_state.active_doc)
 
         st.session_state.active_page = t_page
@@ -1497,6 +2529,9 @@ CONTEXTO DOCUMENTAL E IMÁGENES:
         with st.spinner("Consultando información citada..."):
             ans = call_llm(prompt, sys_prompt, st.session_state.messages[:-1])
 
+        if ans.lstrip().startswith("Error"):
+            st.toast("No se pudo completar la consulta. Revisa el proveedor seleccionado.", icon=":material/error:")
+
         # Sanitizador de texto: Limpiar cualquier comando crudo de LaTeX a texto plano legible (a/b)
         ans = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'\1/\2', ans)
         ans = re.sub(r'\(?\\frac\{([^}]+)\}\{([^}]+)\}\)?', r'\1/\2', ans)
@@ -1510,11 +2545,20 @@ CONTEXTO DOCUMENTAL E IMÁGENES:
 
         st.session_state.highlight_words = extract_highlight_words(prompt, ans, t_content)
         st.session_state.messages.append({"role": "assistant", "content": ans})
+        if not ans.lstrip().startswith("Error"):
+            st.toast("Respuesta lista con referencias", icon=":material/check_circle:")
         st.rerun()
 
 
 def render_pdf_viewer(is_full=False):
     """Visor continuo de documento."""
+    st.markdown("""
+        <div class="panel-heading">
+            <div class="panel-kicker">FUENTE ORIGINAL</div>
+            <div class="panel-title">Lectura del PDF</div>
+            <div class="panel-description">Navega por las páginas y revisa las citas.</div>
+        </div>
+    """, unsafe_allow_html=True)
     if st.session_state.file_bytes:
         viewer_height = 800 if is_full else 740
         pdf_html = render_continuous_pdf_viewer_html(
@@ -1525,14 +2569,22 @@ def render_pdf_viewer(is_full=False):
         )
         components.html(pdf_html, height=viewer_height, scrolling=False)
     else:
-        st.info("Selecciona o sube un documento PDF en el panel lateral.")
+        st.markdown("""
+            <div class="empty-document">
+                <div class="empty-document-mark">PDF</div>
+                <div class="empty-document-title">Tu documento aparecerá aquí</div>
+                <div class="empty-document-copy">Selecciona un archivo de tu biblioteca o carga un PDF desde el panel lateral para comenzar.</div>
+            </div>
+        """, unsafe_allow_html=True)
 
 
 def render_summary(is_full=False):
     """Panel de síntesis documental."""
     st.markdown(f"""
-        <div style="font-weight: 600; font-size: 0.88rem; color: var(--text-muted); margin-bottom: 6px;">
-            Síntesis • {st.session_state.file_name or 'Documento'}
+        <div class="panel-heading">
+            <div class="panel-kicker">LECTURA RÁPIDA</div>
+            <div class="panel-title">Síntesis del documento</div>
+            <div class="panel-description">{st.session_state.file_name or 'Selecciona un documento para empezar.'}</div>
         </div>
     """, unsafe_allow_html=True)
 
@@ -1545,14 +2597,20 @@ def render_summary(is_full=False):
     else:
         st.info("Aún no se ha generado la síntesis de este documento.")
         if st.button("Generar síntesis del documento", use_container_width=True):
+            st.toast("Preparando la síntesis", icon=":material/hourglass_top:")
             with st.spinner("Generando síntesis..."):
                 try:
                     p = f"Elabora una síntesis estructurada por puntos clave del documento '{st.session_state.file_name}':\n\n{st.session_state.full_doc_text[:12000]}"
                     r = call_llm(p, "Eres un analista documental experto.", [])
                     st.session_state.summary = r
+                    if r.lstrip().startswith("Error"):
+                        st.toast("No se pudo generar la síntesis", icon=":material/error:")
+                    else:
+                        st.toast("Síntesis lista", icon=":material/check_circle:")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error: {e}")
+                    st.toast("Falló la generación de la síntesis", icon=":material/error:")
 
 
 # --- DISTRIBUCIÓN DINÁMICA DE PANTALLA ---
