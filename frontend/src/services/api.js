@@ -37,7 +37,7 @@ export function getPdfFileUrl(filename) {
   return `${API_BASE}/documents/${encodeURIComponent(filename)}/file`;
 }
 
-export async function sendChatMessage({ prompt, activeDoc = "", history = [], provider = "Ollama (Local)", apiKey = "", modelName = "", topK = 6 }) {
+export async function sendChatMessage({ prompt, activeDoc = "", history = [], provider = "Ollama (Local)", apiKey = "", modelName = "", topK = 6, sessionId = "" }) {
   const res = await fetch(`${API_BASE}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -49,6 +49,7 @@ export async function sendChatMessage({ prompt, activeDoc = "", history = [], pr
       api_key: apiKey,
       model_name: modelName,
       top_k: topK,
+      session_id: sessionId,
     }),
   });
 
@@ -114,6 +115,36 @@ export async function detectAvailableModels({ provider = "Ollama (Local)", apiKe
   return res.json();
 }
 
+export async function fetchSessions() {
+  const res = await fetch(`${API_BASE}/sessions`);
+  if (!res.ok) throw new Error("Error obteniendo sesiones");
+  return res.json();
+}
+
+export async function createSession({ id = "", title = "Nuevo Chat", activeDoc = "" } = {}) {
+  const res = await fetch(`${API_BASE}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, title, active_doc: activeDoc }),
+  });
+  if (!res.ok) throw new Error("Error creando sesión");
+  return res.json();
+}
+
+export async function fetchSessionMessages(sessionId) {
+  const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/messages`);
+  if (!res.ok) throw new Error("Error obteniendo mensajes de la sesión");
+  return res.json();
+}
+
+export async function deleteSession(sessionId) {
+  const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Error eliminando sesión");
+  return res.json();
+}
+
 export async function shutdownSystem() {
   try {
     await fetch(`${API_BASE}/system/shutdown`, { method: "POST" });
@@ -121,5 +152,6 @@ export async function shutdownSystem() {
     // Si la conexión se cierra porque el servidor murió, es el resultado esperado
   }
 }
+
 
 

@@ -2,6 +2,7 @@ import os
 import json
 import math
 import sqlite3
+import datetime
 from .config import settings
 
 SQLITE_PATH = os.path.join(settings.BASE_DIR, "rag_local.db")
@@ -40,6 +41,11 @@ class DatabaseClient:
         except Exception as e:
             self.mode = "sqlite"
             print(f"[DB] PostgreSQL no disponible ({e}). Usando fallback SQLite.")
+        
+        try:
+            self.init_schema()
+        except Exception as e:
+            print(f"[DB] Error inicializando esquema: {e}")
 
     def init_schema(self):
         if self.mode == "postgres":
@@ -62,6 +68,27 @@ class DatabaseClient:
             """)
             con.run("ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS chunk_type TEXT DEFAULT 'text';")
             con.run("CREATE INDEX IF NOT EXISTS idx_doc_chunks_filename ON document_chunks (filename);")
+
+            # Tablas de sesiones e historial persistente
+            con.run("""
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id TEXT PRIMARY KEY,
+                    title TEXT,
+                    active_doc TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            con.run("""
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id SERIAL PRIMARY KEY,
+                    session_id TEXT REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                    role TEXT,
+                    content TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            con.run("CREATE INDEX IF NOT EXISTS idx_chat_msgs_session ON chat_messages(session_id);")
             con.close()
         else:
             con = sqlite3.connect(SQLITE_PATH)
@@ -78,6 +105,28 @@ class DatabaseClient:
                 );
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_fn ON document_chunks (filename);")
+
+            # Tablas de sesiones e historial persistente en SQLite
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id TEXT PRIMARY KEY,
+                    title TEXT,
+                    active_doc TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT,
+                    role TEXT,
+                    content TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+                );
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chat_msgs_session ON chat_messages(session_id);")
             con.commit()
             con.close()
 
@@ -243,4 +292,189 @@ class DatabaseClient:
             scored.sort(key=lambda x: x[5])
             return scored[:limit]
 
+    # --- MÉTODOS DE HISTORIAL Y SESIONES PERSISTENTES ---
+
+    def create_chat_session(self, session_id: str, title: str = "Nuevo Chat", active_doc: str = "") -> dict:
+        now_str = datetime.datetime.now().isoformat()
+        if self.mode == "postgres":
+            import pg8000.native
+            con = pg8000.native.Connection(
+                user=settings.DB_USER, password=settings.DB_PASSWORD, host=settings.DB_HOST,
+                port=settings.DB_PORT, database=settings.DB_NAME, timeout=5
+            )
+            con.run("""
+                INSERT INTO chat_sessions (id, title, active_doc, created_at, updated_at)
+                VALUES (:sid, :title, :adoc, NOW(), NOW())
+                ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, active_doc = EXCLUDED.active_doc, updated_at = NOW();
+            """, sid=session_id, title=title, adoc=active_doc)
+            con.close()
+        else:
+            con = sqlite3.connect(SQLITE_PATH)
+            cur = con.cursor()
+            cur.execute("""
+                INSERT INTO chat_sessions (id, title, active_doc, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET title=excluded.title, active_doc=excluded.active_doc, updated_at=excluded.updated_at;
+            """, (session_id, title, active_doc, now_str, now_str))
+            con.commit()
+            con.close()
+        return {"id": session_id, "title": title, "active_doc": active_doc, "updated_at": now_str}
+
+    def list_chat_sessions(self) -> list:
+        if self.mode == "postgres":
+            import pg8000.native
+            con = pg8000.native.Connection(
+                user=settings.DB_USER, password=settings.DB_PASSWORD, host=settings.DB_HOST,
+                port=settings.DB_PORT, database=settings.DB_NAME, timeout=5
+            )
+            rows = con.run("""
+                SELECT s.id, s.title, s.active_doc, s.updated_at,
+                       COUNT(m.id) as message_count
+                FROM chat_sessions s
+                LEFT JOIN chat_messages m ON m.session_id = s.id
+                GROUP BY s.id, s.title, s.active_doc, s.updated_at
+                ORDER BY s.updated_at DESC;
+            """)
+            con.close()
+            return [
+                {
+                    "id": r[0],
+                    "title": r[1],
+                    "active_doc": r[2] or "",
+                    "updated_at": str(r[3]),
+                    "message_count": r[4]
+                }
+                for r in rows
+            ]
+        else:
+            con = sqlite3.connect(SQLITE_PATH)
+            cur = con.cursor()
+            cur.execute("""
+                SELECT s.id, s.title, s.active_doc, s.updated_at,
+                       COUNT(m.id) as message_count
+                FROM chat_sessions s
+                LEFT JOIN chat_messages m ON m.session_id = s.id
+                GROUP BY s.id, s.title, s.active_doc, s.updated_at
+                ORDER BY s.updated_at DESC;
+            """)
+            rows = cur.fetchall()
+            con.close()
+            return [
+                {
+                    "id": r[0],
+                    "title": r[1],
+                    "active_doc": r[2] or "",
+                    "updated_at": str(r[3]),
+                    "message_count": r[4]
+                }
+                for r in rows
+            ]
+
+    def get_session_messages(self, session_id: str) -> list:
+        if self.mode == "postgres":
+            import pg8000.native
+            con = pg8000.native.Connection(
+                user=settings.DB_USER, password=settings.DB_PASSWORD, host=settings.DB_HOST,
+                port=settings.DB_PORT, database=settings.DB_NAME, timeout=5
+            )
+            rows = con.run("""
+                SELECT role, content, created_at
+                FROM chat_messages
+                WHERE session_id = :sid
+                ORDER BY id ASC;
+            """, sid=session_id)
+            con.close()
+            return [{"role": r[0], "content": r[1], "created_at": str(r[2])} for r in rows]
+        else:
+            con = sqlite3.connect(SQLITE_PATH)
+            cur = con.cursor()
+            cur.execute("""
+                SELECT role, content, created_at
+                FROM chat_messages
+                WHERE session_id = ?
+                ORDER BY id ASC;
+            """, (session_id,))
+            rows = cur.fetchall()
+            con.close()
+            return [{"role": r[0], "content": r[1], "created_at": str(r[2])} for r in rows]
+
+    def add_chat_message(self, session_id: str, role: str, content: str, active_doc: str = "", auto_title: bool = True):
+        now_str = datetime.datetime.now().isoformat()
+        if self.mode == "postgres":
+            import pg8000.native
+            con = pg8000.native.Connection(
+                user=settings.DB_USER, password=settings.DB_PASSWORD, host=settings.DB_HOST,
+                port=settings.DB_PORT, database=settings.DB_NAME, timeout=5
+            )
+            # Asegurar que la sesión exista
+            con.run("""
+                INSERT INTO chat_sessions (id, title, active_doc, created_at, updated_at)
+                VALUES (:sid, 'Nuevo Chat', :adoc, NOW(), NOW())
+                ON CONFLICT (id) DO UPDATE SET active_doc = CASE WHEN EXCLUDED.active_doc != '' THEN EXCLUDED.active_doc ELSE chat_sessions.active_doc END, updated_at = NOW();
+            """, sid=session_id, adoc=active_doc)
+
+            # Insertar mensaje
+            con.run("""
+                INSERT INTO chat_messages (session_id, role, content, created_at)
+                VALUES (:sid, :role, :cont, NOW());
+            """, sid=session_id, role=role, cont=content)
+
+            # Auto actualizar título si era 'Nuevo Chat' y el mensaje es del usuario
+            if auto_title and role == "user":
+                t_snippet = content.strip().replace("\n", " ")[:40]
+                if t_snippet:
+                    con.run("""
+                        UPDATE chat_sessions
+                        SET title = :title
+                        WHERE id = :sid AND (title = 'Nuevo Chat' OR title = '' OR title IS NULL);
+                    """, title=t_snippet, sid=session_id)
+            con.close()
+        else:
+            con = sqlite3.connect(SQLITE_PATH)
+            cur = con.cursor()
+            # Asegurar que la sesión exista
+            cur.execute("""
+                INSERT INTO chat_sessions (id, title, active_doc, created_at, updated_at)
+                VALUES (?, 'Nuevo Chat', ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET active_doc = CASE WHEN excluded.active_doc != '' THEN excluded.active_doc ELSE chat_sessions.active_doc END, updated_at = excluded.updated_at;
+            """, (session_id, active_doc, now_str, now_str))
+
+            # Insertar mensaje
+            cur.execute("""
+                INSERT INTO chat_messages (session_id, role, content, created_at)
+                VALUES (?, ?, ?, ?);
+            """, (session_id, role, content, now_str))
+
+            # Auto actualizar título si era 'Nuevo Chat' y el mensaje es del usuario
+            if auto_title and role == "user":
+                t_snippet = content.strip().replace("\n", " ")[:40]
+                if t_snippet:
+                    cur.execute("""
+                        UPDATE chat_sessions
+                        SET title = ?
+                        WHERE id = ? AND (title = 'Nuevo Chat' OR title = '' OR title IS NULL);
+                    """, (t_snippet, session_id))
+
+            con.commit()
+            con.close()
+
+    def delete_chat_session(self, session_id: str):
+        if self.mode == "postgres":
+            import pg8000.native
+            con = pg8000.native.Connection(
+                user=settings.DB_USER, password=settings.DB_PASSWORD, host=settings.DB_HOST,
+                port=settings.DB_PORT, database=settings.DB_NAME, timeout=5
+            )
+            con.run("DELETE FROM chat_messages WHERE session_id = :sid;", sid=session_id)
+            con.run("DELETE FROM chat_sessions WHERE id = :sid;", sid=session_id)
+            con.close()
+        else:
+            con = sqlite3.connect(SQLITE_PATH)
+            cur = con.cursor()
+            cur.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
+            cur.execute("DELETE FROM chat_sessions WHERE id = ?", (session_id,))
+            con.commit()
+            con.close()
+
 db = DatabaseClient()
+

@@ -4,7 +4,17 @@ import ChatView from "./components/ChatView";
 import PdfViewer from "./components/PdfViewer";
 import AudioReaderModal from "./components/AudioReaderModal";
 import SettingsModal from "./components/SettingsModal";
-import { fetchDocuments, deleteDocument, sendChatMessage, getPdfFileUrl, generateVideo } from "./services/api";
+import {
+  fetchDocuments,
+  deleteDocument,
+  sendChatMessage,
+  getPdfFileUrl,
+  generateVideo,
+  fetchSessions,
+  createSession,
+  fetchSessionMessages,
+  deleteSession,
+} from "./services/api";
 
 const THEMES = {
   "Minimal Dark (Grafito)": {
@@ -69,6 +79,10 @@ export default function App() {
   // Modal de Parámetros de IA y Chunks
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
+  // Sesiones e Historial Persistente
+  const [sessions, setSessions] = useState([]);
+  const [currentSessionId, setCurrentSessionId] = useState("");
+
   // Chat
   const [messages, setMessages] = useState([
     {
@@ -107,9 +121,109 @@ export default function App() {
     }
   };
 
+  const loadSessions = async (autoSelectId = null) => {
+    try {
+      const sessionList = await fetchSessions();
+      setSessions(sessionList);
+
+      let targetId = autoSelectId;
+      if (!targetId) {
+        if (currentSessionId && sessionList.some((s) => s.id === currentSessionId)) {
+          targetId = currentSessionId;
+        } else if (sessionList.length > 0) {
+          targetId = sessionList[0].id;
+        }
+      }
+
+      if (targetId) {
+        const activeSession = sessionList.find((s) => s.id === targetId);
+        setCurrentSessionId(targetId);
+        if (activeSession && activeSession.active_doc) {
+          setActiveDoc(activeSession.active_doc);
+        }
+        const msgs = await fetchSessionMessages(targetId);
+        if (msgs && msgs.length > 0) {
+          setMessages(msgs);
+        } else {
+          setMessages([
+            {
+              role: "assistant",
+              content: `Hola. Sesión iniciada${activeSession?.active_doc ? ` sobre '${activeSession.active_doc}'` : ""}. Toda respuesta citará las páginas exactas con marcadores interactivos.`,
+            },
+          ]);
+        }
+      } else {
+        // Crear sesión inicial por defecto si la base de datos está vacía
+        const newSid = `session_${Date.now()}`;
+        await createSession({ id: newSid, title: "Nuevo Chat", activeDoc: activeDoc || "" });
+        setCurrentSessionId(newSid);
+        const updated = await fetchSessions();
+        setSessions(updated);
+      }
+    } catch (err) {
+      console.error("Error al cargar sesiones:", err);
+    }
+  };
+
   useEffect(() => {
     loadDocs();
+    loadSessions();
   }, []);
+
+  const handleSelectSession = async (session) => {
+    setCurrentSessionId(session.id);
+    if (session.active_doc) {
+      setActiveDoc(session.active_doc);
+    }
+    try {
+      const msgs = await fetchSessionMessages(session.id);
+      if (msgs && msgs.length > 0) {
+        setMessages(msgs);
+      } else {
+        setMessages([
+          {
+            role: "assistant",
+            content: `Hola. Sesión iniciada${session.active_doc ? ` sobre '${session.active_doc}'` : ""}. Pregunta lo que desees.`,
+          },
+        ]);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleNewSession = async (targetDoc = null) => {
+    const docToUse = targetDoc !== null ? targetDoc : activeDoc;
+    const newSid = `session_${Date.now()}`;
+    const title = docToUse && docToUse !== "Todos los documentos" ? `Chat: ${docToUse}` : "Nuevo Chat";
+    await createSession({ id: newSid, title, activeDoc: docToUse || "" });
+    setCurrentSessionId(newSid);
+    setMessages([
+      {
+        role: "assistant",
+        content: `Nueva sesión creada${docToUse ? ` para '${docToUse}'` : ""}. Tus preguntas y respuestas quedarán guardadas en tu PC.`,
+      },
+    ]);
+    const updated = await fetchSessions();
+    setSessions(updated);
+  };
+
+  const handleDeleteSession = async (sessionId) => {
+    try {
+      await deleteSession(sessionId);
+      const remaining = sessions.filter((s) => s.id !== sessionId);
+      setSessions(remaining);
+      if (currentSessionId === sessionId) {
+        if (remaining.length > 0) {
+          handleSelectSession(remaining[0]);
+        } else {
+          handleNewSession();
+        }
+      }
+    } catch (e) {
+      alert("Error al eliminar la sesión: " + e.message);
+    }
+  };
 
   // Aplicar tema dinámico en CSS root
   useEffect(() => {
@@ -125,30 +239,37 @@ export default function App() {
       await deleteDocument(filename);
       setActiveDoc("Todos los documentos");
       loadDocs();
+      loadSessions();
     } catch (err) {
       alert(err.message);
     }
   };
 
-  const handleUploadSuccess = (fname, uploadData) => {
-    loadDocs();
+  const handleUploadSuccess = async (fname, uploadData) => {
+    await loadDocs();
     setActiveDoc(fname);
+
+    // Crear sesión dedicada a este nuevo PDF
+    const newSid = `session_${Date.now()}`;
+    await createSession({ id: newSid, title: `Análisis de ${fname}`, activeDoc: fname });
+    setCurrentSessionId(newSid);
 
     // Resumen instantáneo directo en el chat al terminar de indexar ("al toque insta")
     const summaryText = uploadData?.auto_summary || `Documento '${fname}' indexado exitosamente. Ya puedes consultar cualquier duda sobre sus páginas.`;
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "assistant",
-        content: `📄 **Resumen instantáneo de '${fname}':**\n\n${summaryText}`,
-        citations: [1],
-        target_content: summaryText.slice(0, 150),
-      },
-    ]);
+    const summaryMsg = {
+      role: "assistant",
+      content: `📄 **Resumen instantáneo de '${fname}':**\n\n${summaryText}`,
+      citations: [1],
+      target_content: summaryText.slice(0, 150),
+    };
+    setMessages([summaryMsg]);
 
     if (uploadData?.suggested_questions && uploadData.suggested_questions.length > 0) {
       setSuggestedQuestions(uploadData.suggested_questions);
     }
+
+    const updated = await fetchSessions();
+    setSessions(updated);
   };
 
   const handleSendMessage = async (text) => {
@@ -166,6 +287,7 @@ export default function App() {
         apiKey: aiSettings.apiKey,
         modelName: aiSettings.modelName,
         topK: aiSettings.topK,
+        sessionId: currentSessionId,
       });
 
       const assistantMsg = {
@@ -188,6 +310,10 @@ export default function App() {
         setSuggestedQuestions(res.suggested_questions);
       }
       setHighlightWords([]);
+
+      // Actualizar listado de sesiones (títulos auto-generados y contador de mensajes)
+      const updatedList = await fetchSessions();
+      setSessions(updatedList);
     } catch (err) {
       setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err.message}` }]);
     } finally {
@@ -265,6 +391,11 @@ export default function App() {
         onThemeChange={setCurrentTheme}
         themes={THEMES}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        onSelectSession={handleSelectSession}
+        onNewSession={() => handleNewSession()}
+        onDeleteSession={handleDeleteSession}
       />
 
       {/* Main Container */}

@@ -56,6 +56,7 @@ class ChatRequest(BaseModel):
     api_key: Optional[str] = ""
     model_name: Optional[str] = ""
     top_k: Optional[int] = 6
+    session_id: Optional[str] = ""
 
 class SummaryRequest(BaseModel):
     filename: str
@@ -66,6 +67,36 @@ class SummaryRequest(BaseModel):
 class DetectModelsRequest(BaseModel):
     provider: str
     api_key: Optional[str] = ""
+
+class CreateSessionRequest(BaseModel):
+    id: Optional[str] = ""
+    title: Optional[str] = "Nuevo Chat"
+    active_doc: Optional[str] = ""
+
+# --- RUTAS DE SESIONES E HISTORIAL PERSISTENTE ---
+
+@app.get("/api/sessions")
+def list_sessions_endpoint():
+    """Lista todas las sesiones e historiales de chat guardadas localmente en PC."""
+    return db.list_chat_sessions()
+
+@app.post("/api/sessions")
+def create_session_endpoint(req: CreateSessionRequest):
+    """Crea o actualiza una sesión de chat asociada a un documento específico."""
+    import time
+    sid = req.id if req.id else f"session_{int(time.time() * 1000)}"
+    return db.create_chat_session(session_id=sid, title=req.title or "Nuevo Chat", active_doc=req.active_doc or "")
+
+@app.get("/api/sessions/{session_id}/messages")
+def get_session_messages_endpoint(session_id: str):
+    """Obtiene el historial completo de mensajes de una sesión."""
+    return db.get_session_messages(session_id)
+
+@app.delete("/api/sessions/{session_id}")
+def delete_session_endpoint(session_id: str):
+    """Elimina una sesión y sus mensajes guardados."""
+    db.delete_chat_session(session_id)
+    return {"status": "ok", "deleted": session_id}
 
 # --- RUTAS DE MODELOS E INTELIGENCIA ARTIFICIAL ---
 
@@ -157,15 +188,22 @@ def get_generated_audio(filename: str):
 def chat_endpoint(req: ChatRequest):
     """Endpoint principal de conversación con RAG, citas automáticas, generación de video/imagen/audio y OCR."""
     clean_p = req.prompt.strip().lower()
-    
+
+    # Guardar mensaje del usuario en base de datos si existe session_id
+    if req.session_id:
+        db.add_chat_message(session_id=req.session_id, role="user", content=req.prompt, active_doc=req.active_doc)
+
     # Detección de solicitud de generación de video directo en el chat
     is_vid, vid_subject = detect_video_request(req.prompt)
     if is_vid:
         try:
             vid_filename = generate_ai_video(vid_subject)
             vid_url = f"http://127.0.0.1:8008/api/videos/{vid_filename}"
+            ans_vid = f"🎬 ¡Aquí tienes el video generado de **{vid_subject}** con movimiento cinematográfico e iluminación dinámica:"
+            if req.session_id:
+                db.add_chat_message(session_id=req.session_id, role="assistant", content=f"{ans_vid}\n{vid_url}", active_doc=req.active_doc)
             return {
-                "answer": f"🎬 ¡Aquí tienes el video generado de **{vid_subject}** con movimiento cinematográfico e iluminación dinámica:",
+                "answer": ans_vid,
                 "video_url": vid_url,
                 "citations": [],
                 "suggested_questions": [
@@ -187,8 +225,11 @@ def chat_endpoint(req: ChatRequest):
         try:
             img_filename = generate_ai_image(img_subject)
             img_url = f"http://127.0.0.1:8008/api/images/{img_filename}"
+            ans_img = f"🎨 ¡Aquí tienes la imagen digital en alta definición de **{img_subject}**:"
+            if req.session_id:
+                db.add_chat_message(session_id=req.session_id, role="assistant", content=f"{ans_img}\n{img_url}", active_doc=req.active_doc)
             return {
-                "answer": f"🎨 ¡Aquí tienes la imagen digital en alta definición de **{img_subject}**:",
+                "answer": ans_img,
                 "image_url": img_url,
                 "citations": [],
                 "suggested_questions": [
@@ -214,6 +255,9 @@ def chat_endpoint(req: ChatRequest):
                 ans_text = f"🎶 **Composición musical de '{aud_subject.title()}':**\n\n{aud_desc}\n\nAquí tienes la pista musical generada para escuchar o descargar:"
             else:
                 ans_text = f"🔊 **Efecto de sonido de '{aud_subject.title()}':**\n\n{aud_desc}\n\nAquí tienes el audio listo para escuchar o descargar:"
+
+            if req.session_id:
+                db.add_chat_message(session_id=req.session_id, role="assistant", content=f"{ans_text}\n{aud_url}", active_doc=req.active_doc)
 
             return {
                 "answer": ans_text,
@@ -332,6 +376,9 @@ REGLAS:
                 "¿Cómo funciona la indexación vectorial y OCR de PDFs?",
                 "Genera un video explicativo sobre inteligencia artificial"
             ]
+
+    if req.session_id:
+        db.add_chat_message(session_id=req.session_id, role="assistant", content=clean_ans, active_doc=req.active_doc)
 
     return {
         "answer": clean_ans,
