@@ -11,6 +11,7 @@ from .database import db
 from .services.pdf_service import process_and_index_pdf, get_indexed_documents, delete_document, get_document_full_text
 from .services.rag_service import retrieve_rag_context, extract_highlight_words
 from .services.ai import call_llm
+from .services.video_service import detect_video_request, generate_ai_video, VIDEOS_DIR
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -109,13 +110,44 @@ def remove_document(filename: str):
         raise HTTPException(status_code=500, detail="No se pudo eliminar el documento.")
     return {"status": "ok", "deleted": filename}
 
+@app.get("/api/videos/{filename}")
+def get_generated_video(filename: str):
+    """Sirve archivos MP4 de video generados con IA directamente en el chat."""
+    file_path = os.path.join(VIDEOS_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Video no encontrado.")
+    return FileResponse(file_path, media_type="video/mp4", filename=filename)
+
 # --- RUTA DE CHAT RAG ---
 
 @app.post("/api/chat")
 def chat_endpoint(req: ChatRequest):
-    """Endpoint principal de conversación con RAG, citas automáticas y OCR."""
+    """Endpoint principal de conversación con RAG, citas automáticas, generación de video y OCR."""
     clean_p = req.prompt.strip().lower()
     
+    # Detección de solicitud de generación de video directo en el chat
+    is_vid, vid_subject = detect_video_request(req.prompt)
+    if is_vid:
+        try:
+            vid_filename = generate_ai_video(vid_subject)
+            vid_url = f"http://127.0.0.1:8008/api/videos/{vid_filename}"
+            return {
+                "answer": f"🎬 ¡Aquí tienes el video generado de **{vid_subject}** con movimiento cinematográfico e iluminación dinámica:",
+                "video_url": vid_url,
+                "citations": [],
+                "suggested_questions": [
+                    f"¿Puedes generar otro video de {vid_subject} con más detalle?",
+                    "Explícame los conceptos visuales clave de esta escena",
+                    "Genera un video de un paisaje futurista"
+                ],
+                "target_page": 1,
+                "target_file": req.active_doc,
+                "target_content": "",
+                "highlight_words": []
+            }
+        except Exception as e:
+            print(f"[VIDEO GENERATION ERROR] {e}")
+
     # 1. Fast-path de cortesía
     if clean_p in ["hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "hey", "que tal", "hola!", "holaa", "saludos"]:
         return {

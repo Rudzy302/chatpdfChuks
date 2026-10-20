@@ -4,6 +4,7 @@ import ChatView from "./components/ChatView";
 import PdfViewer from "./components/PdfViewer";
 import SummaryView from "./components/SummaryView";
 import AudioReaderModal from "./components/AudioReaderModal";
+import SettingsModal from "./components/SettingsModal";
 import { fetchDocuments, deleteDocument, sendChatMessage, getPdfFileUrl, generateVideo } from "./services/api";
 import { MessageSquare, FileText, Sparkles, Headphones } from "lucide-react";
 
@@ -72,6 +73,9 @@ export default function App() {
   // Tema
   const [currentTheme, setCurrentTheme] = useState("Minimal Dark (Grafito)");
 
+  // Modal de Parámetros de IA y Chunks
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   // Chat
   const [messages, setMessages] = useState([
     {
@@ -86,12 +90,16 @@ export default function App() {
   ]);
   const [sending, setSending] = useState(false);
 
-  // Configuración de modelo
+  // Configuración de modelo y lectura
   const [aiSettings, setAiSettings] = useState({
     provider: "Ollama (Local)",
     modelName: "qwen2.5:7b",
     apiKey: "",
     topK: 6,
+    chunkSize: 1000,
+    chunkOverlap: 150,
+    voiceSpeed: 1.0,
+    karaokeEnabled: true,
   });
 
   const loadDocs = async () => {
@@ -171,6 +179,7 @@ export default function App() {
         content: res.answer,
         citations: res.citations || [],
         target_content: res.target_content || "",
+        video_url: res.video_url || null,
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
@@ -195,6 +204,21 @@ export default function App() {
     setShowPdf(true);
     if (citedContent) {
       // Extraer términos clave exactos del fragmento citado específico
+      const words = citedContent.match(/\b[A-Za-z0-9_áéíóúÁÉÍÓÚñÑ]{3,}\b/g) || [];
+      const filtered = words.filter(
+        (w) => !["para", "como", "este", "esta", "sobre", "desde", "entre", "texto", "pagina", "archivo"].includes(w.toLowerCase())
+      );
+      setHighlightWords(filtered.slice(0, 15));
+    }
+  };
+
+  // 6. Resaltado instantáneo al pasar el cursor (hover) por citas o círculos numéricos
+  const handleHoverCitation = (pageNum, citedContent) => {
+    if (!pageNum) {
+      setHighlightWords([]);
+      return;
+    }
+    if (citedContent) {
       const words = citedContent.match(/\b[A-Za-z0-9_áéíóúÁÉÍÓÚñÑ]{3,}\b/g) || [];
       const filtered = words.filter(
         (w) => !["para", "como", "este", "esta", "sobre", "desde", "entre", "texto", "pagina", "archivo"].includes(w.toLowerCase())
@@ -246,6 +270,7 @@ export default function App() {
         theme={currentTheme}
         onThemeChange={setCurrentTheme}
         themes={THEMES}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
       {/* Main Container */}
@@ -348,6 +373,7 @@ export default function App() {
                 messages={messages}
                 onSendMessage={handleSendMessage}
                 onNavigateToPage={handleNavigateToPage}
+                onHoverCitation={handleHoverCitation}
                 sending={sending}
                 aiSettings={aiSettings}
                 onUpdateAiSettings={setAiSettings}
@@ -377,6 +403,14 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {/* Modal de Configuración Avanzada de IA, Chunks y Lector */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        aiSettings={aiSettings}
+        onSaveSettings={setAiSettings}
+      />
     </div>
   );
 }

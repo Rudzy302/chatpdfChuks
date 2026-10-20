@@ -1,25 +1,24 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, Settings, Sparkles, Volume2, VolumeX, Mic, MicOff, Film, Headphones } from "lucide-react";
+import { Send, Sparkles, Volume2, VolumeX, Mic, MicOff, Headphones, Download, Film } from "lucide-react";
 
 export default function ChatView({
   messages = [],
   onSendMessage,
   onNavigateToPage,
+  onHoverCitation,
   sending = false,
-  aiSettings,
-  onUpdateAiSettings,
+  aiSettings = {},
   suggestedQuestions = [],
-  onGenerateVideo,
   onOpenAudioReader,
   activeDoc = "",
 }) {
   const [input, setInput] = useState("");
-  const [showConfig, setShowConfig] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState(null);
+  const [currentWordCharIndex, setCurrentWordCharIndex] = useState(-1);
   const recognitionRef = useRef(null);
 
-  // Inicializar Speech Recognition (Reconocimiento por Micrófono)
+  // Inicializar Speech Recognition
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
@@ -34,13 +33,8 @@ export default function ChatView({
         setIsListening(false);
       };
 
-      recognition.onerror = () => {
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
+      recognition.onerror = () => setIsListening(false);
+      recognition.onend = () => setIsListening(false);
 
       recognitionRef.current = recognition;
     }
@@ -64,7 +58,7 @@ export default function ChatView({
     }
   };
 
-  // Lector de voz (Text-to-Speech)
+  // Lector de voz (Text-to-Speech con Karaoke de palabras iluminadas)
   const handleSpeak = (text, idx) => {
     if (!window.speechSynthesis) {
       alert("El sintetizador de voz no está soportado.");
@@ -74,18 +68,35 @@ export default function ChatView({
     if (speakingIndex === idx) {
       window.speechSynthesis.cancel();
       setSpeakingIndex(null);
+      setCurrentWordCharIndex(-1);
       return;
     }
 
     window.speechSynthesis.cancel();
-    // Limpiar etiquetas como [Pág. X] para que la lectura sea fluida
-    const cleanSpeechText = text.replace(/\[(?:Pág\.|Página|Imagen en Pág\.)\s*\d+\]/gi, "");
+    setCurrentWordCharIndex(-1);
+
+    // Limpiar citas [Pág. X] para no deletrearlas al hablar
+    const cleanSpeechText = text.replace(/\[(?:Pág\.|Página|Pag\.)\s*\d+\]/gi, "");
     const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
     utterance.lang = "es-ES";
-    utterance.rate = 1.05;
+    utterance.rate = aiSettings?.voiceSpeed || 1.05;
 
-    utterance.onend = () => setSpeakingIndex(null);
-    utterance.onerror = () => setSpeakingIndex(null);
+    // Evento onboundary para iluminar la palabra actual (Efecto Karaoke)
+    utterance.onboundary = (event) => {
+      if (event.name === "word") {
+        setCurrentWordCharIndex(event.charIndex);
+      }
+    };
+
+    utterance.onend = () => {
+      setSpeakingIndex(null);
+      setCurrentWordCharIndex(-1);
+    };
+
+    utterance.onerror = () => {
+      setSpeakingIndex(null);
+      setCurrentWordCharIndex(-1);
+    };
 
     setSpeakingIndex(idx);
     window.speechSynthesis.speak(utterance);
@@ -98,54 +109,161 @@ export default function ChatView({
     setInput("");
   };
 
-  const renderMessageContent = (text, isUser) => {
+  // Renderizador de contenido con citas interactivas y efecto Karaoke
+  const renderMessageContent = (text, isUser, msgIdx) => {
     if (isUser || !text) return text;
+
+    const isSpeakingThis = speakingIndex === msgIdx && currentWordCharIndex >= 0 && (aiSettings?.karaokeEnabled !== false);
+
+    // Segmentar el texto identificando citas [Pág. X]
     const regex = /\[(?:Pág\.|Página|Pag\.)\s*(\d+)\]/gi;
-    const parts = [];
+    const segments = [];
     let lastIdx = 0;
     let match;
 
     while ((match = regex.exec(text)) !== null) {
       const pageNum = parseInt(match[1], 10);
       if (match.index > lastIdx) {
-        parts.push(text.substring(lastIdx, match.index));
+        segments.push({ type: "text", content: text.substring(lastIdx, match.index), charStart: lastIdx });
       }
-      parts.push(
-        <button
-          key={match.index}
-          onClick={() => onNavigateToPage && onNavigateToPage(pageNum, text)}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "2px",
-            background: "rgba(14, 165, 233, 0.12)",
-            border: "1px solid rgba(14, 165, 233, 0.4)",
-            color: "var(--accent)",
-            padding: "1px 7px",
-            borderRadius: "10px",
-            fontSize: "0.78rem",
-            fontWeight: "600",
-            cursor: "pointer",
-            margin: "0 3px",
-            verticalAlign: "middle",
-            transition: "all 0.15s ease",
-          }}
-          title={`Ir a Página ${pageNum} en el visor continuo`}
-        >
-          📄 Pág. {pageNum}
-        </button>
-      );
+      segments.push({ type: "citation", page: pageNum, raw: match[0] });
       lastIdx = regex.lastIndex;
     }
 
     if (lastIdx < text.length) {
-      parts.push(text.substring(lastIdx));
+      segments.push({ type: "text", content: text.substring(lastIdx), charStart: lastIdx });
     }
-    return parts;
+
+    return segments.map((seg, sIdx) => {
+      if (seg.type === "citation") {
+        return (
+          <button
+            key={sIdx}
+            onClick={() => onNavigateToPage && onNavigateToPage(seg.page, text)}
+            onMouseEnter={() => onHoverCitation && onHoverCitation(seg.page, text)}
+            onMouseLeave={() => onHoverCitation && onHoverCitation(null)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "3px",
+              background: "rgba(14, 165, 233, 0.14)",
+              border: "1px solid rgba(14, 165, 233, 0.4)",
+              color: "var(--accent)",
+              padding: "1px 8px",
+              borderRadius: "12px",
+              fontSize: "0.78rem",
+              fontWeight: "600",
+              cursor: "pointer",
+              margin: "0 3px",
+              verticalAlign: "middle",
+              transition: "all 0.15s ease",
+            }}
+            title={`Pasa el cursor para ver la cita; haz clic para saltar a la Página ${seg.page}`}
+          >
+            📄 Pág. {seg.page}
+          </button>
+        );
+      }
+
+      // Si no es un mensaje que se esté hablando actualmente, renderizar texto plano
+      if (!isSpeakingThis) {
+        return <span key={sIdx}>{seg.content}</span>;
+      }
+
+      // Si se está hablando: renderizar con efecto Karaoke
+      const words = seg.content.split(/(\s+)/);
+      let runningCharOffset = seg.charStart;
+
+      return (
+        <span key={sIdx}>
+          {words.map((w, wIdx) => {
+            const wStart = runningCharOffset;
+            const wEnd = runningCharOffset + w.length;
+            runningCharOffset = wEnd;
+
+            // Determinar cercanía con la palabra actual hablada
+            const isCurrent = currentWordCharIndex >= wStart && currentWordCharIndex <= wEnd && w.trim().length > 0;
+            const diff = currentWordCharIndex - wStart;
+            const isRecentTrail = diff > 0 && diff < 35 && w.trim().length > 0;
+
+            if (isCurrent) {
+              return (
+                <span
+                  key={wIdx}
+                  style={{
+                    color: "#ffffff",
+                    background: "var(--accent)",
+                    boxShadow: "0 0 12px var(--accent)",
+                    borderRadius: "3px",
+                    padding: "0 4px",
+                    fontWeight: "700",
+                    transition: "all 0.1s ease",
+                  }}
+                >
+                  {w}
+                </span>
+              );
+            }
+
+            if (isRecentTrail) {
+              return (
+                <span
+                  key={wIdx}
+                  style={{
+                    color: "var(--accent)",
+                    background: "rgba(14, 165, 233, 0.15)",
+                    borderRadius: "3px",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  {w}
+                </span>
+              );
+            }
+
+            return <span key={wIdx}>{w}</span>;
+          })}
+        </span>
+      );
+    });
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%", overflow: "hidden", background: "var(--bg-base)" }}>
+      {/* Header bar de la conversación */}
+      <div style={{ height: "42px", padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--bg-card)", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "var(--text)", display: "flex", alignItems: "center", gap: "6px" }}>
+          <span>💬 Conversación Asistida</span>
+          {activeDoc && activeDoc !== "Todos los documentos" && (
+            <span style={{ fontSize: "0.75rem", color: "var(--accent)", opacity: 0.85 }}>• {activeDoc}</span>
+          )}
+        </div>
+
+        {activeDoc && activeDoc !== "Todos los documentos" && onOpenAudioReader && (
+          <button
+            onClick={onOpenAudioReader}
+            style={{
+              background: "rgba(14, 165, 233, 0.12)",
+              border: "1px solid rgba(14, 165, 233, 0.35)",
+              color: "var(--accent)",
+              fontSize: "0.76rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "4px 10px",
+              borderRadius: "5px",
+              cursor: "pointer",
+              fontWeight: "500",
+              transition: "all 0.15s ease",
+            }}
+            title="Escuchar audio resumen estructurado del documento"
+          >
+            <Headphones size={13} />
+            <span>Lector de Audio Documental</span>
+          </button>
+        )}
+      </div>
+
       {/* Feed de Mensajes */}
       <div style={{ flex: 1, overflowY: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
         {messages.map((m, idx) => {
@@ -168,20 +286,48 @@ export default function ChatView({
                   color: isUser ? "#ffffff" : "var(--text)",
                   border: isUser ? "none" : "1px solid var(--border)",
                   fontSize: "0.9rem",
-                  lineHeight: "1.5",
+                  lineHeight: "1.6",
                   whiteSpace: "pre-wrap",
                 }}
               >
-                {renderMessageContent(m.content, isUser)}
+                {renderMessageContent(m.content, isUser, idx)}
+
+                {/* Reproductor de Video Integrado si el mensaje generó video */}
+                {m.video_url && (
+                  <div style={{ marginTop: "12px", borderRadius: "8px", overflow: "hidden", border: "1px solid var(--border)", background: "#050505" }}>
+                    <video
+                      src={m.video_url}
+                      controls
+                      autoPlay
+                      loop
+                      style={{ width: "100%", maxHeight: "320px", display: "block", objectFit: "contain" }}
+                    />
+                    <div style={{ padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-base)", fontSize: "0.78rem" }}>
+                      <span style={{ color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "5px" }}>
+                        <Film size={13} color="var(--accent)" /> Video Generado por IA
+                      </span>
+                      <a
+                        href={m.video_url}
+                        download
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "var(--accent)", textDecoration: "none", fontWeight: "600", display: "flex", alignItems: "center", gap: "4px" }}
+                      >
+                        <Download size={13} />
+                        Descargar MP4
+                      </a>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Acciones del mensaje del asistente: Lector de Audio y Citas con círculos numerados */}
+              {/* Acciones del mensaje del asistente: Lector con Karaoke y Círculos Clickeables/Hover */}
               {!isUser && (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "6px" }}>
                   {/* Botón Lector TTS */}
                   <button
                     onClick={() => handleSpeak(m.content, idx)}
-                    title={speakingIndex === idx ? "Detener lectura" : "Escuchar respuesta con voz natural"}
+                    title={speakingIndex === idx ? "Detener lectura" : "Escuchar con voz y seguimiento de lectura iluminada"}
                     style={{
                       background: "transparent",
                       border: "none",
@@ -198,7 +344,7 @@ export default function ChatView({
                     <span>{speakingIndex === idx ? "Detener" : "Escuchar"}</span>
                   </button>
 
-                  {/* 5. Citas con círculo y número de orden exacto */}
+                  {/* Citas sincronizadas con Hover y Clic */}
                   {m.citations && m.citations.length > 0 && (
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                       <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Fuente:</span>
@@ -206,8 +352,11 @@ export default function ChatView({
                         <div
                           key={cIdx}
                           onClick={() => onNavigateToPage(pNum, m.target_content || m.content)}
+                          onMouseEnter={() => onHoverCitation && onHoverCitation(pNum, m.target_content || m.content)}
+                          onMouseLeave={() => onHoverCitation && onHoverCitation(null)}
                           className="citation-bubble"
-                          title={`Ver cita ${cIdx + 1} en Página ${pNum} (clic para resaltar unicamente este fragmento)`}
+                          style={{ cursor: "pointer", transition: "transform 0.15s ease, box-shadow 0.15s ease" }}
+                          title={`Hover: Resalta en visor | Clic: Abre Página ${pNum}`}
                         >
                           {cIdx + 1}
                         </div>
@@ -220,13 +369,14 @@ export default function ChatView({
           );
         })}
         {sending && (
-          <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontStyle: "italic" }}>
-            Consultando información y citando fuentes...
+          <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontStyle: "italic", display: "flex", alignItems: "center", gap: "6px" }}>
+            <Sparkles size={14} className="animate-spin" color="var(--accent)" />
+            <span>Consultando información y citando fuentes...</span>
           </div>
         )}
       </div>
 
-      {/* 4. Preguntas sugeridas de seguimiento para continuar la conversación */}
+      {/* Preguntas sugeridas de seguimiento dinámicas */}
       {suggestedQuestions && suggestedQuestions.length > 0 && (
         <div style={{ padding: "0 20px 8px 20px", display: "flex", gap: "6px", flexWrap: "wrap" }}>
           <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "4px" }}>
@@ -257,169 +407,57 @@ export default function ChatView({
         </div>
       )}
 
-      {/* Drawer de Configuración de Modelo / Chunks */}
-      <div style={{ padding: "0 20px 10px 20px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-          <button
-            onClick={() => setShowConfig(!showConfig)}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "var(--text-muted)",
-              fontSize: "0.75rem",
-              display: "flex",
-              alignItems: "center",
-              gap: "5px",
-              cursor: "pointer",
-            }}
-          >
-            <Settings size={13} />
-            {showConfig ? "Ocultar Parámetros de Inferencia" : "⚙️ Parámetros de Modelo, Chunks y Vectores"}
-          </button>
-
-          {/* Botón de Lector de Audio Documental */}
-          {activeDoc && activeDoc !== "Todos los documentos" && (onOpenAudioReader || onGenerateVideo) && (
-            <button
-              onClick={onOpenAudioReader || onGenerateVideo}
-              style={{
-                background: "rgba(14, 165, 233, 0.12)",
-                border: "1px solid rgba(14, 165, 233, 0.35)",
-                color: "var(--accent)",
-                fontSize: "0.78rem",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "4px 10px",
-                borderRadius: "5px",
-                cursor: "pointer",
-                fontWeight: "500",
-                transition: "all 0.15s ease",
-              }}
-              title="Escuchar audio narración completa del documento"
-            >
-              <Headphones size={14} />
-              <span>Lector de Audio Documental</span>
-            </button>
-          )}
-        </div>
-
-        {showConfig && (
-          <div
-            style={{
-              padding: "14px",
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: "8px",
-              marginBottom: "12px",
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr 1fr",
-              gap: "12px",
-              fontSize: "0.8rem",
-            }}
-          >
-            <div>
-              <label style={{ display: "block", color: "var(--text-muted)", marginBottom: "4px" }}>Motor de Inferencia:</label>
-              <select
-                value={aiSettings.provider}
-                onChange={(e) => onUpdateAiSettings({ ...aiSettings, provider: e.target.value })}
-                style={{ width: "100%", background: "var(--bg-base)", border: "1px solid var(--border)", color: "var(--text)", padding: "6px", borderRadius: "4px" }}
-              >
-                <option value="Llama.cpp Server (Local)">Llama.cpp Server (Local CUDA :8080)</option>
-                <option value="Ollama (Local)">Ollama (Local :11434)</option>
-                <option value="Google Gemini (Nube)">Google Gemini (Nube)</option>
-                <option value="OpenAI / Groq API (Nube)">OpenAI / Groq API (Nube)</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ display: "block", color: "var(--text-muted)", marginBottom: "4px" }}>Modelo / Checkpoint:</label>
-              <input
-                type="text"
-                value={aiSettings.modelName}
-                onChange={(e) => onUpdateAiSettings({ ...aiSettings, modelName: e.target.value })}
-                placeholder="qwen2.5:7b, llava:7b..."
-                style={{ width: "100%", background: "var(--bg-base)", border: "1px solid var(--border)", color: "var(--text)", padding: "6px", borderRadius: "4px" }}
-              />
-            </div>
-
-            {aiSettings.provider.includes("Nube") && (
-              <div>
-                <label style={{ display: "block", color: "var(--text-muted)", marginBottom: "4px" }}>API Key:</label>
-                <input
-                  type="password"
-                  value={aiSettings.apiKey}
-                  onChange={(e) => onUpdateAiSettings({ ...aiSettings, apiKey: e.target.value })}
-                  placeholder="AIzaSy... / gsk_..."
-                  style={{ width: "100%", background: "var(--bg-base)", border: "1px solid var(--border)", color: "var(--text)", padding: "6px", borderRadius: "4px" }}
-                />
-              </div>
-            )}
-
-            <div>
-              <label style={{ display: "block", color: "var(--text-muted)", marginBottom: "4px" }}>Top Chunks (RAG): {aiSettings.topK}</label>
-              <input
-                type="range"
-                min="2"
-                max="10"
-                value={aiSettings.topK}
-                onChange={(e) => onUpdateAiSettings({ ...aiSettings, topK: parseInt(e.target.value) })}
-                style={{ width: "100%", accentColor: "var(--accent)" }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Input Form con Micrófono y Reconocimiento de Voz */}
+      {/* Input Form con Micrófono y Reconocimiento de Voz */}
+      <div style={{ padding: "0 20px 16px 20px" }}>
         <form onSubmit={handleSubmit} style={{ display: "flex", gap: "8px" }}>
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={isListening ? "Escuchando tu voz por el micrófono..." : "Escribe tu consulta o usa el micrófono..."}
+            placeholder={isListening ? "Escuchando tu voz por el micrófono..." : "Pregunta sobre el documento o escribe 'genera un video de...'"}
             disabled={sending}
             style={{
               flex: 1,
+              padding: "10px 14px",
+              borderRadius: "8px",
               background: "var(--bg-card)",
               border: isListening ? "1px solid #ef4444" : "1px solid var(--border)",
-              borderRadius: "8px",
-              padding: "12px 16px",
               color: "var(--text)",
               fontSize: "0.9rem",
               outline: "none",
             }}
           />
 
-          {/* Botón de Micrófono (Audio Recognition) */}
           <button
             type="button"
             onClick={toggleListening}
-            title={isListening ? "Detener grabación" : "Dictar consulta con tu voz"}
             style={{
-              background: isListening ? "#ef4444" : "var(--bg-card)",
-              border: "1px solid " + (isListening ? "#ef4444" : "var(--border)"),
-              color: isListening ? "#ffffff" : "var(--text)",
+              padding: "0 12px",
               borderRadius: "8px",
-              padding: "0 14px",
+              background: isListening ? "rgba(239, 68, 68, 0.2)" : "var(--bg-card)",
+              border: `1px solid ${isListening ? "#ef4444" : "var(--border)"}`,
+              color: isListening ? "#ef4444" : "var(--text-muted)",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              transition: "background 0.2s ease",
             }}
+            title={isListening ? "Detener micrófono" : "Dictar consulta por voz"}
           >
             {isListening ? <MicOff size={18} /> : <Mic size={18} />}
           </button>
 
           <button
             type="submit"
-            disabled={sending || !input.trim()}
+            disabled={!input.trim() || sending}
             style={{
+              padding: "0 16px",
+              borderRadius: "8px",
               background: "var(--accent)",
               border: "none",
               color: "#ffffff",
-              borderRadius: "8px",
-              padding: "0 18px",
-              cursor: sending || !input.trim() ? "not-allowed" : "pointer",
+              cursor: !input.trim() || sending ? "not-allowed" : "pointer",
+              opacity: !input.trim() || sending ? 0.6 : 1,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",

@@ -10,8 +10,8 @@ export default function PdfViewer({ fileUrl, targetPage = 1, highlightWords = []
   const [scale, setScale] = useState(1.1);
   const [loading, setLoading] = useState(false);
   const [totalPages, setTotalPages] = useState(0);
-  const pageRefs = useRef({});
 
+  // Carga inicial y renderizado continuo de las páginas del PDF
   useEffect(() => {
     if (!fileUrl) return;
 
@@ -33,7 +33,7 @@ export default function PdfViewer({ fileUrl, targetPage = 1, highlightWords = []
           const page = await pdf.getPage(p);
           const viewport = page.getViewport({ scale });
 
-          // Card contenedor
+          // Card contenedor de página
           const card = document.createElement("div");
           card.className = "page-card";
           card.id = `page-${p}`;
@@ -68,15 +68,14 @@ export default function PdfViewer({ fileUrl, targetPage = 1, highlightWords = []
           canvas.style.borderRadius = "4px";
           card.appendChild(canvas);
 
-          // Text layer para selección y resaltado fluorescente
+          // Text layer para selección y marcado de citas
           const textLayer = document.createElement("div");
           textLayer.className = "textLayer";
           textLayer.style.position = "absolute";
           textLayer.style.left = "0";
           textLayer.style.top = "0";
-          textLayer.style.width = `${viewport.width}px`;
-          textLayer.style.height = `${viewport.height}px`;
-          textLayer.style.lineHeight = "1.0";
+          textLayer.style.right = "0";
+          textLayer.style.bottom = "0";
           textLayer.style.opacity = "1";
           card.appendChild(textLayer);
 
@@ -94,28 +93,17 @@ export default function PdfViewer({ fileUrl, targetPage = 1, highlightWords = []
             viewport: viewport,
             textDivs: [],
           }).promise;
-
-          // Aplicar resaltador fluorescente
-          if (highlightWords && highlightWords.length > 0) {
-            const spans = textLayer.getElementsByTagName("span");
-            const terms = highlightWords.map((w) => w.trim().toLowerCase()).filter((w) => w.length >= 3);
-            for (let i = 0; i < spans.length; i++) {
-              const text = spans[i].textContent.toLowerCase();
-              if (terms.some((t) => text.includes(t) || (text.length >= 3 && t.includes(text)))) {
-                spans[i].classList.add("pdf-highlight-mark");
-              }
-            }
-          }
         }
+
         setLoading(false);
 
-        // Desplazarse suavemente a la página citada
+        // Desplazarse a la página destino inicial
         setTimeout(() => {
           const targetEl = document.getElementById(`page-${targetPage}`);
           if (targetEl) {
             targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
           }
-        }, 150);
+        }, 100);
       } catch (err) {
         console.error("Error al renderizar PDF:", err);
         setLoading(false);
@@ -127,7 +115,37 @@ export default function PdfViewer({ fileUrl, targetPage = 1, highlightWords = []
     return () => {
       active = false;
     };
-  }, [fileUrl, scale, targetPage, highlightWords]);
+  }, [fileUrl, scale]);
+
+  // Actualización instantánea de resaltado en el DOM (sin re-renderizar los canvas)
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    // 1. Limpiar resaltados previos
+    const prevMarks = containerRef.current.querySelectorAll(".pdf-highlight-mark");
+    prevMarks.forEach((el) => el.classList.remove("pdf-highlight-mark"));
+
+    if (!highlightWords || highlightWords.length === 0) return;
+
+    // 2. Aplicar clases en spans que coincidan
+    const terms = highlightWords.map((w) => w.trim().toLowerCase()).filter((w) => w.length >= 3);
+    const spans = containerRef.current.querySelectorAll(".textLayer span");
+    for (let i = 0; i < spans.length; i++) {
+      const text = spans[i].textContent.toLowerCase();
+      if (terms.some((t) => text.includes(t) || (text.length >= 3 && t.includes(text)))) {
+        spans[i].classList.add("pdf-highlight-mark");
+      }
+    }
+  }, [highlightWords]);
+
+  // Desplazamiento suave al cambiar de página destino
+  useEffect(() => {
+    if (!targetPage) return;
+    const targetEl = document.getElementById(`page-${targetPage}`);
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [targetPage]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%", overflow: "hidden", background: "var(--bg-base)" }}>

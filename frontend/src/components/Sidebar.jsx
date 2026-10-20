@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Upload, Trash2, File, CheckCircle2, ChevronDown, Palette, RefreshCw, Power } from "lucide-react";
+import { Upload, Trash2, File, CheckCircle2, ChevronDown, Palette, RefreshCw, Power, Settings } from "lucide-react";
 
 export default function Sidebar({
   documents = [],
@@ -10,6 +10,7 @@ export default function Sidebar({
   theme,
   onThemeChange,
   themes = {},
+  onOpenSettings,
 }) {
   const [uploading, setUploading] = useState(false);
   const [analyzeImages, setAnalyzeImages] = useState(true);
@@ -148,8 +149,42 @@ export default function Sidebar({
         </div>
       </div>
 
+      {/* Botón de Parámetros de IA y Chunks */}
+      <div style={{ marginTop: "auto", marginBottom: "14px" }}>
+        <button
+          onClick={onOpenSettings}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+            padding: "9px 12px",
+            borderRadius: "6px",
+            background: "var(--bg-card)",
+            border: "1px solid var(--border)",
+            color: "var(--text)",
+            fontSize: "0.82rem",
+            fontWeight: "500",
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = "var(--accent)";
+            e.currentTarget.style.color = "var(--accent)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = "var(--border)";
+            e.currentTarget.style.color = "var(--text)";
+          }}
+        >
+          <Settings size={15} />
+          <span>Parámetros de IA y Chunks</span>
+        </button>
+      </div>
+
       {/* Selector de Tema */}
-      <div style={{ marginTop: "auto", marginBottom: "16px" }}>
+      <div style={{ marginBottom: "16px" }}>
         <div style={{ fontSize: "0.75rem", fontWeight: "600", color: "var(--text-muted)", marginBottom: "8px", textTransform: "uppercase" }}>
           Tema y Apariencia
         </div>
