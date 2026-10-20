@@ -79,20 +79,20 @@ html, body, #root {
   background: rgba(79, 107, 245, 0.35);
 }
 
-/* Fluorescent highlight in PDF pages */
+/* Resaltado estilo marcador sutil, limpio y legible (respeta la tipografía y el fondo de la página) */
 .pdf-highlight-mark {
-  background-color: rgba(254, 240, 138, 0.88) !important;
-  color: transparent !important;
-  outline: 2px solid rgba(234, 179, 8, 1) !important;
-  border-radius: 3px !important;
-  box-shadow: 0 0 12px rgba(234, 179, 8, 0.75) !important;
-  animation: pulse-glow 2s infinite ease-in-out;
+  background-color: rgba(254, 240, 138, 0.32) !important;
+  mix-blend-mode: multiply !important;
+  border-radius: 2px !important;
+  border-bottom: 2.5px solid rgba(217, 119, 6, 0.55) !important;
+  outline: none !important;
+  box-shadow: none !important;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-@keyframes pulse-glow {
-  0% { box-shadow: 0 0 4px rgba(234, 179, 8, 0.4); }
-  50% { box-shadow: 0 0 14px rgba(234, 179, 8, 0.85); }
-  100% { box-shadow: 0 0 4px rgba(234, 179, 8, 0.4); }
+.pdf-highlight-mark:hover {
+  background-color: rgba(254, 240, 138, 0.5) !important;
+  border-bottom-color: rgba(180, 83, 9, 0.85) !important;
 }
 
 .citation-bubble {
