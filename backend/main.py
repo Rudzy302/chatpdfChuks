@@ -135,20 +135,19 @@ def chat_endpoint(req: ChatRequest):
     # 2. Recuperación RAG
     rag_info = retrieve_rag_context(req.prompt, req.active_doc, top_k=req.top_k)
 
-    sys_prompt = f"""Eres un asistente de análisis documental riguroso, de alta fidelidad y especialista en transcripción y resolución.
+    sys_prompt = f"""Eres un asistente de análisis documental riguroso, de alta fidelidad y especialista en resolución de consultas técnicas.
 Responde de forma clara, directa, comprensible y 100% legible basándote en el contexto del documento, el texto transcrito (OCR) y las descripciones visuales proporcionadas.
 
-REGLAS DE FORMATO Y LEGIBILIDAD (CRÍTICO):
-1. FORMATO DE FRACCIONES Y TEXTO PLANO:
-   - PROHIBIDO TERMINANTEMENTE usar código o comandos crudos de LaTeX como '\\frac{{a}}{{b}}', '(\frac{{...}})' o etiquetas extrañas.
-   - Escribe las fracciones SIEMPRE en formato natural de texto plano legible y limpio, con barra diagonal (ej: 3/8, 6/16, 24/64, 48/128, etc.).
-   - Estructura los ejercicios línea por línea de forma ordenada y limpia (ejemplo:
-     a) 3/8 = 6/16 = 12/32 = 24/64 = 48/128 = 96/256
-     b) ...
-   ).
-2. CITACIÓN OBLIGATORIA: Cita SIEMPRE el número de página exacto entre corchetes, por ejemplo [Pág. 1].
-3. TRANSCRIPCIÓN Y RESOLUCIÓN: Transcribe todos los ejercicios y texto que veas con máxima fidelidad, sin inventar y sin omitir nada.
-4. Emplea la terminología textual exacta del documento para permitir el marcado fluorescente.
+REGLAS DE FORMATO Y CITACIÓN OBLIGATORIAS:
+1. CITACIÓN OBLIGATORIA: Cita SIEMPRE el número de página exacto entre corchetes, por ejemplo [Pág. 1] o [Pág. 3], al final de las afirmaciones o datos que menciones del documento.
+2. FORMATO DE FRACCIONES Y TEXTO PLANO:
+   - PROHIBIDO usar código o comandos LaTeX como '\\frac{{a}}{{b}}'. Escribe las fracciones siempre en texto plano legible (ej: 3/8, 6/16).
+3. PREGUNTAS DE SEGUIMIENTO (OBLIGATORIO):
+   Al final de tu respuesta, añade exactamente 3 preguntas cortas e interesantes que el usuario podría hacer a continuación para seguir profundizando en este documento. Usa exactamente este delimitador:
+   --- SUGERENCIAS ---
+   - ¿Pregunta 1 de seguimiento?
+   - ¿Pregunta 2 de seguimiento?
+   - ¿Pregunta 3 de seguimiento?
 
 CONTEXTO DOCUMENTAL E IMÁGENES:
 {rag_info['context_text']}
@@ -164,15 +163,26 @@ CONTEXTO DOCUMENTAL E IMÁGENES:
         model_name=req.model_name
     )
 
+    # Separar respuesta principal de las preguntas de seguimiento dinámicas
+    suggested_questions = []
+    if "--- SUGERENCIAS ---" in raw_answer:
+        parts = raw_answer.split("--- SUGERENCIAS ---")
+        clean_ans = parts[0].strip()
+        sug_text = parts[1].strip()
+        for line in sug_text.split("\n"):
+            cl = line.strip().lstrip("-").lstrip("*").lstrip("0123456789.").strip()
+            if cl and len(cl) > 6 and ("¿" in cl or "?" in cl):
+                suggested_questions.append(cl)
+    else:
+        clean_ans = raw_answer.strip()
+
     # Sanitización de salida (evitar que se filtren comandos LaTeX)
-    clean_ans = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'\1/\2', raw_answer)
+    clean_ans = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'\1/\2', clean_ans)
     clean_ans = re.sub(r'\(?\\frac\{([^}]+)\}\{([^}]+)\}\)?', r'\1/\2', clean_ans)
     clean_ans = clean_ans.replace(r'\(', '').replace(r'\)', '').replace(r'\[', '[').replace(r'\]', ']')
 
-    found_cites = re.findall(r'\[(?:Pág\.|Página|Imagen en Pág\.)\s*(\d+)\]', clean_ans, re.IGNORECASE)
-    target_page = int(found_cites[0]) if found_cites else rag_info["target_page"]
-    highlight_words = extract_highlight_words(req.prompt, clean_ans, rag_info["target_content"])
-
+    found_cites = re.findall(r'\[(?:Pág\.|Página|Imagen en Pág\.|Pag\.)\s*(\d+)\]', clean_ans, re.IGNORECASE)
+    
     # Extraer lista única de páginas citadas
     seen_pages = []
     for c in found_cites:
@@ -180,9 +190,26 @@ CONTEXTO DOCUMENTAL E IMÁGENES:
         if p not in seen_pages:
             seen_pages.append(p)
 
+    # Si el LLM no puso explícitamente [Pág. X] pero consultamos páginas del documento, añadirlas para garantizar citas
+    if not seen_pages and rag_info.get("retrieved_pages"):
+        seen_pages = rag_info["retrieved_pages"][:3]
+        clean_ans += "\n\n📌 *Fuentes consultadas en el documento: " + ", ".join(f"[Pág. {p}]" for p in seen_pages) + "*"
+
+    target_page = seen_pages[0] if seen_pages else rag_info["target_page"]
+    highlight_words = extract_highlight_words(req.prompt, clean_ans, rag_info["target_content"])
+
+    # Si no se generaron sugerencias dinámicas, generar según la página consultada
+    if not suggested_questions and req.active_doc and req.active_doc != "Todos los documentos":
+        suggested_questions = [
+            f"¿Qué otros detalles contiene la página {target_page}?",
+            "¿Cuáles son las conclusiones o pasos a seguir de este apartado?",
+            "Explícame los conceptos técnicos más importantes de esta sección"
+        ]
+
     return {
         "answer": clean_ans,
         "citations": seen_pages,
+        "suggested_questions": suggested_questions[:3],
         "target_page": target_page,
         "target_file": rag_info["target_file"] or req.active_doc,
         "target_content": rag_info["target_content"],
@@ -193,13 +220,24 @@ CONTEXTO DOCUMENTAL E IMÁGENES:
 
 @app.post("/api/summary")
 def summary_endpoint(req: SummaryRequest):
-    """Genera una síntesis estructurada del documento completo."""
+    """Genera una síntesis estructurada del documento completo con citas exactas por página."""
     full_text = get_document_full_text(req.filename)
     if not full_text:
         raise HTTPException(status_code=404, detail="El documento no tiene contenido para resumir.")
 
-    prompt = f"Elabora una síntesis estructurada por puntos clave del documento '{req.filename}':\n\n{full_text[:12000]}"
-    sys_prompt = "Eres un analista documental experto. Proporciona un resumen claro, estructurado y exhaustivo."
+    prompt = (
+        f"Elabora una síntesis ejecutiva estructurada y completa del documento '{req.filename}'.\n\n"
+        "REGLAS CRÍTICAS DE CITACIÓN Y FORMATO:\n"
+        "1. Estructura el resumen en secciones claras:\n"
+        "   - 📌 Objetivo General del Documento\n"
+        "   - 🔑 Puntos Clave y Temas Principales\n"
+        "   - 🛠️ Procedimientos, Ejercicios o Casos de Estudio\n"
+        "   - 📝 Conclusiones y Resultados Relevantes\n"
+        "2. CITACIÓN OBLIGATORIA: En CADA sección, afirmación o punto clave, cita SIEMPRE entre corchetes la página exacta de donde proviene la información usando el formato [Pág. X] (por ejemplo: [Pág. 1], [Pág. 3]).\n"
+        "3. Sé conciso, profesional y riguroso sin inventar datos.\n\n"
+        f"CONTENIDO DEL DOCUMENTO CON NÚMEROS DE PÁGINA:\n{full_text[:14000]}"
+    )
+    sys_prompt = "Eres un analista documental riguroso. Siempre citas las páginas de origen usando el formato [Pág. X]."
     
     summary_text = call_llm(
         prompt=prompt,

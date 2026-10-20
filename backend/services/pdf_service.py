@@ -44,18 +44,39 @@ def process_and_index_pdf(file_bytes: bytes, filename: str, provider: str = "Oll
             f.write(file_bytes)
 
     if already_indexed:
-        print(f"[CACHE] Documento '{filename}' ya indexado en base de datos ({already_indexed['chunks']} chunks). Retornando al instante.")
+        print(f"[CACHE] Documento '{filename}' ya indexado en base de datos ({already_indexed['chunks']} chunks). Retornando con preguntas dinámicas.")
+        preview_text = get_document_full_text(filename)[:3000]
+        cached_questions = []
+        auto_summary = f"Documento '{filename}' cargado ({already_indexed['chunks']} páginas indexadas con vectores en base de datos)."
+        try:
+            from .ai import call_llm
+            q_prompt = (
+                f"El documento '{filename}' contiene este contenido:\n{preview_text}\n\n"
+                "Genera exactamente 3 preguntas muy interesantes, específicas y concretas que un usuario haría sobre este contenido específico. "
+                "Devuelve solo las 3 preguntas, una por línea, empezando con '-'."
+            )
+            q_res = call_llm(q_prompt, system_prompt="Eres un analista documental experto.", history=[], provider=provider, api_key=api_key)
+            for line in q_res.split("\n"):
+                cl = line.strip().lstrip("-").lstrip("0123456789.").strip()
+                if cl and len(cl) > 8:
+                    cached_questions.append(cl)
+        except Exception:
+            pass
+
+        if len(cached_questions) < 3:
+            cached_questions = [
+                f"¿Qué objetivos y temas principales aborda {filename}?",
+                "¿Cuáles son los pasos, conceptos o conclusiones más relevantes?",
+                "¿Qué ejercicios, vulnerabilidades o datos técnicos detalla el documento?"
+            ]
+
         return {
             "filename": filename,
             "pages": len(doc),
             "chunks_indexed": already_indexed["chunks"],
             "cached": True,
-            "auto_summary": f"Documento '{filename}' cargado instantáneamente desde la base de datos ({already_indexed['chunks']} páginas indexadas con vectores).",
-            "suggested_questions": [
-                f"¿De qué trata {filename}?",
-                "Explícame los conceptos más importantes",
-                "¿Qué conclusiones o datos clave contiene?"
-            ]
+            "auto_summary": auto_summary,
+            "suggested_questions": cached_questions[:3]
         }
 
     chunks = []
@@ -154,9 +175,9 @@ def process_and_index_pdf(file_bytes: bytes, filename: str, provider: str = "Oll
             f"Lee los primeros fragmentos:\n{full_text[:5000]}\n\n"
             "Por favor, responde con dos secciones:\n"
             "RESUMEN:\n"
-            "(Un resumen ejecutivo conciso de 3 a 5 puntos clave sobre qué trata el documento)\n\n"
+            "(Un resumen ejecutivo conciso de 3 a 5 puntos clave sobre qué trata el documento. En cada punto clave, cita la página de origen obligatoriamente con [Pág. X])\n\n"
             "PREGUNTAS SUGERIDAS:\n"
-            "(Exactamente 3 preguntas interesantes y específicas que el usuario puede hacerte para profundizar en el documento. Cada pregunta en una línea empezando con '-')\n"
+            "(Exactamente 3 preguntas interesantes y específicas sobre el tema del documento para continuar el chat. Cada pregunta en una línea empezando con '-')\n"
         )
         llm_reply = call_llm(
             prompt=summary_prompt,

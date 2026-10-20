@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, Settings, Sparkles, Volume2, VolumeX, Mic, MicOff, Film } from "lucide-react";
+import { Send, Settings, Sparkles, Volume2, VolumeX, Mic, MicOff, Film, Headphones } from "lucide-react";
 
 export default function ChatView({
   messages = [],
@@ -10,6 +10,7 @@ export default function ChatView({
   onUpdateAiSettings,
   suggestedQuestions = [],
   onGenerateVideo,
+  onOpenAudioReader,
   activeDoc = "",
 }) {
   const [input, setInput] = useState("");
@@ -97,6 +98,52 @@ export default function ChatView({
     setInput("");
   };
 
+  const renderMessageContent = (text, isUser) => {
+    if (isUser || !text) return text;
+    const regex = /\[(?:Pág\.|Página|Pag\.)\s*(\d+)\]/gi;
+    const parts = [];
+    let lastIdx = 0;
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      const pageNum = parseInt(match[1], 10);
+      if (match.index > lastIdx) {
+        parts.push(text.substring(lastIdx, match.index));
+      }
+      parts.push(
+        <button
+          key={match.index}
+          onClick={() => onNavigateToPage && onNavigateToPage(pageNum, text)}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "2px",
+            background: "rgba(14, 165, 233, 0.12)",
+            border: "1px solid rgba(14, 165, 233, 0.4)",
+            color: "var(--accent)",
+            padding: "1px 7px",
+            borderRadius: "10px",
+            fontSize: "0.78rem",
+            fontWeight: "600",
+            cursor: "pointer",
+            margin: "0 3px",
+            verticalAlign: "middle",
+            transition: "all 0.15s ease",
+          }}
+          title={`Ir a Página ${pageNum} en el visor continuo`}
+        >
+          📄 Pág. {pageNum}
+        </button>
+      );
+      lastIdx = regex.lastIndex;
+    }
+
+    if (lastIdx < text.length) {
+      parts.push(text.substring(lastIdx));
+    }
+    return parts;
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%", overflow: "hidden", background: "var(--bg-base)" }}>
       {/* Feed de Mensajes */}
@@ -125,7 +172,7 @@ export default function ChatView({
                   whiteSpace: "pre-wrap",
                 }}
               >
-                {m.content}
+                {renderMessageContent(m.content, isUser)}
               </div>
 
               {/* Acciones del mensaje del asistente: Lector de Audio y Citas con círculos numerados */}
@@ -230,25 +277,28 @@ export default function ChatView({
             {showConfig ? "Ocultar Parámetros de Inferencia" : "⚙️ Parámetros de Modelo, Chunks y Vectores"}
           </button>
 
-          {/* Botón de Generar Video */}
-          {activeDoc && activeDoc !== "Todos los documentos" && onGenerateVideo && (
+          {/* Botón de Lector de Audio Documental */}
+          {activeDoc && activeDoc !== "Todos los documentos" && (onOpenAudioReader || onGenerateVideo) && (
             <button
-              onClick={onGenerateVideo}
+              onClick={onOpenAudioReader || onGenerateVideo}
               style={{
-                background: "rgba(14, 165, 233, 0.1)",
-                border: "1px solid rgba(14, 165, 233, 0.3)",
+                background: "rgba(14, 165, 233, 0.12)",
+                border: "1px solid rgba(14, 165, 233, 0.35)",
                 color: "var(--accent)",
-                fontSize: "0.75rem",
+                fontSize: "0.78rem",
                 display: "flex",
                 alignItems: "center",
-                gap: "5px",
-                padding: "3px 8px",
-                borderRadius: "4px",
+                gap: "6px",
+                padding: "4px 10px",
+                borderRadius: "5px",
                 cursor: "pointer",
+                fontWeight: "500",
+                transition: "all 0.15s ease",
               }}
+              title="Escuchar audio narración completa del documento"
             >
-              <Film size={13} />
-              Generar Video Resumen
+              <Headphones size={14} />
+              <span>Lector de Audio Documental</span>
             </button>
           )}
         </div>

@@ -3,9 +3,9 @@ import Sidebar from "./components/Sidebar";
 import ChatView from "./components/ChatView";
 import PdfViewer from "./components/PdfViewer";
 import SummaryView from "./components/SummaryView";
-import VideoModal from "./components/VideoModal";
+import AudioReaderModal from "./components/AudioReaderModal";
 import { fetchDocuments, deleteDocument, sendChatMessage, getPdfFileUrl, generateVideo } from "./services/api";
-import { MessageSquare, FileText, Sparkles, Film } from "lucide-react";
+import { MessageSquare, FileText, Sparkles, Headphones } from "lucide-react";
 
 const THEMES = {
   "Minimal Dark (Grafito)": {
@@ -177,7 +177,10 @@ export default function App() {
       if (res.target_page) {
         setTargetPage(res.target_page);
       }
-      // Inicialmente NO sobrecargamos con marcado de todas las palabras, se activa limpiamente por círculo
+      if (res.suggested_questions && res.suggested_questions.length > 0) {
+        setSuggestedQuestions(res.suggested_questions);
+      }
+      // Inicialmente NO sobrecargamos con marcado de todas las palabras, se activa limpiamente por círculo o cita
       setHighlightWords([]);
     } catch (err) {
       setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err.message}` }]);
@@ -228,9 +231,9 @@ export default function App() {
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden" }}>
-      {/* Modal de Video */}
+      {/* Modal de Lector de Audio Documental */}
       {videoStoryboard && (
-        <VideoModal storyboard={videoStoryboard} onClose={() => setVideoStoryboard(null)} />
+        <AudioReaderModal storyboard={videoStoryboard} onClose={() => setVideoStoryboard(null)} />
       )}
 
       {/* Sidebar */}
@@ -349,7 +352,7 @@ export default function App() {
                 aiSettings={aiSettings}
                 onUpdateAiSettings={setAiSettings}
                 suggestedQuestions={suggestedQuestions}
-                onGenerateVideo={handleGenerateVideo}
+                onOpenAudioReader={handleGenerateVideo}
                 activeDoc={activeDoc}
               />
             </div>
@@ -369,7 +372,7 @@ export default function App() {
 
           {showSummary && (
             <div style={{ height: "100%", overflow: "hidden" }}>
-              <SummaryView filename={activeDoc} aiSettings={aiSettings} />
+              <SummaryView filename={activeDoc} aiSettings={aiSettings} onNavigateToPage={handleNavigateToPage} />
             </div>
           )}
         </div>

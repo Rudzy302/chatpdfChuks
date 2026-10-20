@@ -29,6 +29,11 @@ def retrieve_rag_context(user_prompt: str, active_filename: str = "", top_k: int
         target_page = top_chunks[0][1]
         target_content = top_chunks[0][3]
 
+    retrieved_pages = []
+    for r in top_chunks:
+        if r[1] and r[1] not in retrieved_pages:
+            retrieved_pages.append(r[1])
+
     context_str = ""
     for r in top_chunks:
         p_prefix = "[Imagen en Pág." if r[4] == "image" else "[Pág."
@@ -39,6 +44,7 @@ def retrieve_rag_context(user_prompt: str, active_filename: str = "", top_k: int
         "target_file": target_file,
         "target_page": target_page,
         "target_content": target_content,
+        "retrieved_pages": retrieved_pages,
         "is_global": es_global
     }
 
