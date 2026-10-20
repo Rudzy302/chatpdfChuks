@@ -47,7 +47,7 @@ def kill_proc_tree(pid):
 
 def is_backend_alive():
     try:
-        req = urllib.request.urlopen("http://localhost:8008/api/documents", timeout=1)
+        req = urllib.request.urlopen("http://127.0.0.1:8008/api/documents", timeout=2)
         return req.status == 200
     except Exception:
         return False
@@ -63,30 +63,37 @@ def main():
     if os.name == "nt":
         creationflags = subprocess.CREATE_NO_WINDOW
         
-    # Iniciar backend en puerto 8008
+    # Iniciar backend en puerto 8008 con host 127.0.0.1
     backend_proc = subprocess.Popen(
-        [py_bin, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8008"],
+        [py_bin, "-m", "uvicorn", "backend.main:app", "--host", "127.0.0.1", "--port", "8008"],
         cwd=root_dir,
         creationflags=creationflags
     )
     
-    # Iniciar frontend en puerto 5173
+    # Iniciar frontend en puerto 4173 con host 127.0.0.1 (evita error EACCES de Windows en 5173)
     frontend_proc = subprocess.Popen(
-        [npm_bin, "run", "dev", "--", "--port", "5173"],
+        [npm_bin, "run", "dev", "--", "--host", "127.0.0.1", "--port", "4173"],
         cwd=frontend_dir,
         creationflags=creationflags
     )
     
-    time.sleep(2)
-    webbrowser.open("http://localhost:5173")
+    # Dar tiempo a que Node y FastAPI inicialicen
+    time.sleep(3)
+    webbrowser.open("http://127.0.0.1:4173")
     
-    # Monitor de ciclo de vida: si el backend recibe la señal de shutdown desde la interfaz o el usuario sale, se tumba todo
+    # Monitor de ciclo de vida
+    consecutive_failures = 0
     try:
         while True:
-            time.sleep(1.5)
-            # Si el proceso de backend terminó o se solicitó shutdown por la API
-            if backend_proc.poll() is not None or not is_backend_alive():
+            time.sleep(2)
+            if backend_proc.poll() is not None:
                 break
+            if not is_backend_alive():
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    break
+            else:
+                consecutive_failures = 0
     except KeyboardInterrupt:
         pass
     finally:

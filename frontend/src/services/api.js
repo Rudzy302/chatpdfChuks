@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8008/api";
+const API_BASE = "http://127.0.0.1:8008/api";
 
 export async function fetchDocuments() {
   const res = await fetch(`${API_BASE}/documents`);
