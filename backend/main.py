@@ -148,26 +148,13 @@ def chat_endpoint(req: ChatRequest):
         except Exception as e:
             print(f"[VIDEO GENERATION ERROR] {e}")
 
-    # 1. Fast-path de cortesía
-    if clean_p in ["hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "hey", "que tal", "hola!", "holaa", "saludos"]:
-        return {
-            "answer": "¡Hola! Estoy listo para responder consultas técnicas sobre tu documento. Puedes preguntarme sobre el texto, pasos o sobre cualquier imagen que contenga.",
-            "citations": [],
-            "target_page": 1,
-            "highlight_words": []
-        }
-    elif clean_p in ["gracias", "muchas gracias", "ok gracias", "vale gracias", "perfecto gracias"]:
-        return {
-            "answer": "¡Con gusto! Quedo a tu disposición si necesitas verificar cualquier otro dato o página.",
-            "citations": [],
-            "target_page": 1,
-            "highlight_words": []
-        }
-
     # 2. Recuperación RAG
     rag_info = retrieve_rag_context(req.prompt, req.active_doc, top_k=req.top_k)
+    clean_context = rag_info.get('context_text', '').strip()
 
-    sys_prompt = f"""Eres un asistente de análisis documental riguroso, de alta fidelidad y especialista en resolución de consultas técnicas.
+    if clean_context:
+        # Modo Análisis Documental RAG con Citas
+        sys_prompt = f"""Eres un asistente de análisis documental riguroso, de alta fidelidad y especialista en resolución de consultas técnicas.
 Responde de forma clara, directa, comprensible y 100% legible basándote en el contexto del documento, el texto transcrito (OCR) y las descripciones visuales proporcionadas.
 
 REGLAS DE FORMATO Y CITACIÓN OBLIGATORIAS:
@@ -182,7 +169,21 @@ REGLAS DE FORMATO Y CITACIÓN OBLIGATORIAS:
    - ¿Pregunta 3 de seguimiento?
 
 CONTEXTO DOCUMENTAL E IMÁGENES:
-{rag_info['context_text']}
+{clean_context}
+"""
+    else:
+        # Modo Asistente Inteligente Conversacional (Sin documento o preguntas generales)
+        sys_prompt = """Eres un asistente de inteligencia artificial avanzado, inteligente, útil y amigable (con capacidades similares a ChatGPT o Gemini).
+Puedes responder con profundidad, precisión y amabilidad a cualquier pregunta de conocimiento general, programación, matemáticas, ciencia, redacción creativa o mantener una conversación amena y natural.
+Si el usuario aún no ha subido o seleccionado ningún documento PDF, responde ampliamente a su consulta y recuérdale con naturalidad que también puede cargar archivos PDF para analizarlos con OCR y citas exactas.
+Responde en español, usando formato Markdown limpio y legible.
+
+REGLAS:
+- Al final de tu respuesta, añade exactamente 3 preguntas cortas de sugerencia interesantes para continuar la conversación. Usa exactamente este delimitador:
+--- SUGERENCIAS ---
+- ¿Pregunta 1 de sugerencia?
+- ¿Pregunta 2 de sugerencia?
+- ¿Pregunta 3 de sugerencia?
 """
 
     history_dicts = [{"role": m.role, "content": m.content} for m in req.history]
@@ -190,9 +191,9 @@ CONTEXTO DOCUMENTAL E IMÁGENES:
         prompt=req.prompt,
         system_prompt=sys_prompt,
         history=history_dicts,
-        provider=req.provider,
-        api_key=req.api_key,
-        model_name=req.model_name
+        provider=req.provider or "Ollama (Local)",
+        api_key=req.api_key or "",
+        model_name=req.model_name or ""
     )
 
     # Separar respuesta principal de las preguntas de seguimiento dinámicas
@@ -222,22 +223,29 @@ CONTEXTO DOCUMENTAL E IMÁGENES:
         if p not in seen_pages:
             seen_pages.append(p)
 
-    # Si el LLM no puso explícitamente [Pág. X] pero consultamos páginas del documento, registrar las páginas consultadas
-    if not seen_pages and rag_info.get("retrieved_pages"):
+    # Si hay contexto documental y el LLM no puso [Pág. X], enlazar la página consultada
+    if clean_context and not seen_pages and rag_info.get("retrieved_pages"):
         seen_pages = rag_info["retrieved_pages"][:3]
         if seen_pages and not re.search(r'\[(?:Pág\.|Página|Pag\.)\s*\d+\]', clean_ans):
             clean_ans = clean_ans.rstrip() + f" [Pág. {seen_pages[0]}]"
 
-    target_page = seen_pages[0] if seen_pages else rag_info["target_page"]
-    highlight_words = extract_highlight_words(req.prompt, clean_ans, rag_info["target_content"])
+    target_page = seen_pages[0] if seen_pages else (rag_info["target_page"] if clean_context else 1)
+    highlight_words = extract_highlight_words(req.prompt, clean_ans, rag_info["target_content"]) if clean_context else []
 
-    # Si no se generaron sugerencias dinámicas, generar según la página consultada
-    if not suggested_questions and req.active_doc and req.active_doc != "Todos los documentos":
-        suggested_questions = [
-            f"¿Qué otros detalles contiene la página {target_page}?",
-            "¿Cuáles son las conclusiones o pasos a seguir de este apartado?",
-            "Explícame los conceptos técnicos más importantes de esta sección"
-        ]
+    # Si no se generaron sugerencias dinámicas, proporcionar sugerencias según el modo
+    if not suggested_questions:
+        if clean_context:
+            suggested_questions = [
+                f"¿Qué otros detalles contiene la página {target_page}?",
+                "¿Cuáles son las conclusiones o pasos a seguir de este apartado?",
+                "Explícame los conceptos técnicos más importantes de esta sección"
+            ]
+        else:
+            suggested_questions = [
+                "¿Qué temas de programación o tecnología dominas?",
+                "¿Cómo funciona la indexación vectorial y OCR de PDFs?",
+                "Genera un video explicativo sobre inteligencia artificial"
+            ]
 
     return {
         "answer": clean_ans,
@@ -245,7 +253,7 @@ CONTEXTO DOCUMENTAL E IMÁGENES:
         "suggested_questions": suggested_questions[:3],
         "target_page": target_page,
         "target_file": rag_info["target_file"] or req.active_doc,
-        "target_content": rag_info["target_content"],
+        "target_content": rag_info["target_content"] if clean_context else "",
         "highlight_words": highlight_words
     }
 

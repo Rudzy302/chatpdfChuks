@@ -17,27 +17,55 @@ def is_global_query(prompt: str) -> bool:
 
 def retrieve_rag_context(user_prompt: str, active_filename: str = "", top_k: int = 6):
     es_global = is_global_query(user_prompt)
-    embedding_list = generate_embedding(user_prompt)
-    top_chunks = db.search_similar_chunks(embedding_list, filename=active_filename, limit=top_k)
-
     target_file = ""
     target_page = 1
     target_content = ""
+    retrieved_pages = []
+    context_str = ""
+
+    # Si no hay documento seleccionado o no hay documentos indexados, salir de inmediato sin buscar vectores
+    if not active_filename or active_filename == "Todos los documentos":
+        try:
+            docs = db.get_all_documents()
+            if not docs:
+                return {
+                    "context_text": "",
+                    "target_file": "",
+                    "target_page": 1,
+                    "target_content": "",
+                    "retrieved_pages": [],
+                    "is_global": es_global
+                }
+        except Exception:
+            return {
+                "context_text": "",
+                "target_file": "",
+                "target_page": 1,
+                "target_content": "",
+                "retrieved_pages": [],
+                "is_global": es_global
+            }
+
+    top_chunks = []
+    try:
+        embedding_list = generate_embedding(user_prompt)
+        top_chunks = db.search_similar_chunks(embedding_list, filename=active_filename, limit=top_k)
+    except Exception as e:
+        print(f"[RAG] Aviso: Búsqueda vectorial no disponible o sin resultados: {e}")
+        top_chunks = []
 
     if top_chunks:
         target_file = top_chunks[0][0]
         target_page = top_chunks[0][1]
         target_content = top_chunks[0][3]
 
-    retrieved_pages = []
-    for r in top_chunks:
-        if r[1] and r[1] not in retrieved_pages:
-            retrieved_pages.append(r[1])
+        for r in top_chunks:
+            if r[1] and r[1] not in retrieved_pages:
+                retrieved_pages.append(r[1])
 
-    context_str = ""
-    for r in top_chunks:
-        p_prefix = "[Imagen en Pág." if r[4] == "image" else "[Pág."
-        context_str += f"{p_prefix} {r[1]} - Archivo: {r[0]}]:\n{r[3]}\n\n"
+        for r in top_chunks:
+            p_prefix = "[Imagen en Pág." if r[4] == "image" else "[Pág."
+            context_str += f"{p_prefix} {r[1]} - Archivo: {r[0]}]:\n{r[3]}\n\n"
 
     return {
         "context_text": context_str,

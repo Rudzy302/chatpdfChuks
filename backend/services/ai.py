@@ -68,8 +68,8 @@ def describe_image_with_vision(img_bytes: bytes, page_num: int, provider: str = 
 
     return f"Fotografía o ilustración en la página {page_num}."
 
-def call_llm(prompt: str, system_prompt: str, history: list, provider: str = "Llama.cpp Server (Local)", api_key: str = "", model_name: str = "") -> str:
-    """Ejecuta consulta según el proveedor configurado (Llama.cpp, Ollama, Gemini u OpenAI/Groq)."""
+def call_llm(prompt: str, system_prompt: str, history: list, provider: str = "Ollama (Local)", api_key: str = "", model_name: str = "") -> str:
+    """Ejecuta consulta según el proveedor configurado (Ollama, Gemini, OpenAI/Groq o Llama.cpp)."""
     # 1. Google Gemini
     if provider == "Google Gemini (Nube)":
         if not api_key:
@@ -168,10 +168,22 @@ def call_llm(prompt: str, system_prompt: str, history: list, provider: str = "Ll
             messages.extend([{"role": m["role"], "content": m["content"]} for m in recent_history])
             messages.append({"role": "user", "content": prompt})
 
-            resp = ollama.chat(
-                model=model_name or settings.DEFAULT_CHAT_MODEL,
-                messages=messages
-            )
-            return resp["message"]["content"]
+            target_m = model_name or settings.DEFAULT_CHAT_MODEL
+            try:
+                resp = ollama.chat(
+                    model=target_m,
+                    messages=messages
+                )
+                return resp["message"]["content"]
+            except Exception as e_primary:
+                # Si el modelo específico falla, intentar con otros modelos locales instalados
+                for fallback in ["qwen2.5:14b", "qwen2.5:7b", "mistral-small:24b"]:
+                    if fallback != target_m:
+                        try:
+                            resp = ollama.chat(model=fallback, messages=messages)
+                            return resp["message"]["content"]
+                        except Exception:
+                            continue
+                raise e_primary
         except Exception as e:
             return f"Error al consultar Ollama local: {e}"
