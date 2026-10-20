@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { X, Settings, Cpu, Layers, Volume2, Eye, EyeOff, Save, Check } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, Settings, Cpu, Layers, Volume2, Eye, EyeOff, Save, Check, Info } from "lucide-react";
 
 export default function SettingsModal({
   isOpen,
@@ -8,19 +8,50 @@ export default function SettingsModal({
   onSaveSettings,
 }) {
   const [formData, setFormData] = useState({
-    provider: aiSettings.provider || "Ollama (Local)",
-    modelName: aiSettings.modelName || "qwen2.5:7b",
-    apiKey: aiSettings.apiKey || "",
-    topK: aiSettings.topK || 6,
-    chunkSize: aiSettings.chunkSize || 1000,
-    chunkOverlap: aiSettings.chunkOverlap || 150,
-    voiceSpeed: aiSettings.voiceSpeed || 1.0,
-    karaokeEnabled: aiSettings.karaokeEnabled !== false,
+    provider: aiSettings?.provider || "Ollama (Local)",
+    modelName: aiSettings?.modelName || "qwen2.5:14b",
+    apiKey: aiSettings?.apiKey || "",
+    topK: aiSettings?.topK || 6,
+    chunkSize: aiSettings?.chunkSize || 1000,
+    chunkOverlap: aiSettings?.chunkOverlap || 150,
+    voiceSpeed: aiSettings?.voiceSpeed || 1.0,
+    voiceURI: aiSettings?.voiceURI || "",
+    karaokeEnabled: aiSettings?.karaokeEnabled !== false,
   });
 
   const [showApiKey, setShowApiKey] = useState(false);
   const [activeTab, setActiveTab] = useState("model");
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [voiceList, setVoiceList] = useState([]);
+
+  useEffect(() => {
+    if (window.speechSynthesis) {
+      const loadVoices = () => {
+        const voices = window.speechSynthesis.getVoices();
+        const curated = voices.slice(0, 15).map((v) => ({
+          uri: v.voiceURI || v.name,
+          name: v.lang.startsWith("es") ? `🇪🇸 ${v.name} (${v.lang})` : `🇺🇸 ${v.name} (${v.lang})`,
+        }));
+        if (curated.length < 10) {
+          curated.push(
+            { uri: "preset_es_1", name: "🇪🇸 Sabina / Elena (Español Natural)" },
+            { uri: "preset_es_2", name: "🇪🇸 Pablo (Español Grave)" },
+            { uri: "preset_es_3", name: "🇪🇸 Laura (Español Radial)" },
+            { uri: "preset_mx_1", name: "🇲🇽 Raúl (Español México Narrador)" },
+            { uri: "preset_mx_2", name: "🇲🇽 Paulina (Español México Cálido)" },
+            { uri: "preset_ar_1", name: "🇦🇷 Diego (Español Argentina)" },
+            { uri: "preset_co_1", name: "🇨🇴 Sofía (Español Colombia)" },
+            { uri: "preset_es_doc", name: "🇪🇸 Narrador Documental Pro" },
+            { uri: "preset_en_1", name: "🇺🇸 David (Corporativa Bilingüe)" },
+            { uri: "preset_en_2", name: "🇺🇸 Jenny (Profesional Bilingüe)" }
+          );
+        }
+        setVoiceList(curated);
+      };
+      loadVoices();
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  }, []);
 
   if (!isOpen) return null;
 
@@ -32,6 +63,14 @@ export default function SettingsModal({
       onClose();
     }, 600);
   };
+
+  const installedOllamaModels = [
+    "qwen2.5:14b",
+    "qwen2.5:7b",
+    "mistral-small:24b",
+    "qwen2.5:32b",
+    "llava:7b",
+  ];
 
   return (
     <div
@@ -51,8 +90,8 @@ export default function SettingsModal({
     >
       <div
         style={{
-          width: "600px",
-          maxWidth: "92vw",
+          width: "620px",
+          maxWidth: "94vw",
           background: "var(--bg-card)",
           border: "1px solid var(--border)",
           borderRadius: "14px",
@@ -172,12 +211,18 @@ export default function SettingsModal({
                     outline: "none",
                   }}
                 >
-                  <option value="Ollama (Local)">Ollama (Local en tu PC)</option>
-                  <option value="OpenAI">OpenAI (GPT-4o, GPT-3.5)</option>
-                  <option value="Google Gemini">Google Gemini (Gemini 1.5 Pro/Flash)</option>
-                  <option value="Anthropic Claude">Anthropic Claude (Claude 3.5 Sonnet)</option>
-                  <option value="Groq">Groq (Inferencia Ultra-rápida Llama 3)</option>
+                  <option value="Ollama (Local)">Ollama (Local con Aceleración GPU - Recomendado)</option>
+                  <option value="Llama.cpp Server (Local)">Llama.cpp Server (Requiere llama-server en puerto 8080)</option>
+                  <option value="OpenAI / Groq API (Nube)">OpenAI / Groq API (Nube)</option>
+                  <option value="Google Gemini (Nube)">Google Gemini (Nube)</option>
                 </select>
+
+                {formData.provider === "Llama.cpp Server (Local)" && (
+                  <div style={{ marginTop: "6px", padding: "8px 10px", background: "rgba(234, 179, 8, 0.12)", border: "1px solid rgba(234, 179, 8, 0.3)", borderRadius: "6px", fontSize: "0.76rem", color: "#facc15", display: "flex", gap: "6px" }}>
+                    <Info size={14} style={{ flexShrink: 0, marginTop: "1px" }} />
+                    <span>Llama.cpp requiere que ejecutes manualmente <code>llama-server.exe</code> en el puerto 8080. Si usas Ollama, tus modelos como qwen2.5:14b ya están listos en el puerto 11434.</span>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -188,7 +233,7 @@ export default function SettingsModal({
                   type="text"
                   value={formData.modelName}
                   onChange={(e) => setFormData({ ...formData, modelName: e.target.value })}
-                  placeholder="ej: qwen2.5:7b, llama3.2, gpt-4o"
+                  placeholder="ej: qwen2.5:14b, qwen2.5:7b, gpt-4o-mini"
                   style={{
                     width: "100%",
                     padding: "8px 12px",
@@ -200,6 +245,31 @@ export default function SettingsModal({
                     outline: "none",
                   }}
                 />
+
+                {formData.provider === "Ollama (Local)" && (
+                  <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>Modelos instalados en tu PC:</span>
+                    {installedOllamaModels.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, modelName: m })}
+                        style={{
+                          background: formData.modelName === m ? "var(--accent)" : "var(--bg-base)",
+                          color: formData.modelName === m ? "#ffffff" : "var(--text)",
+                          border: "1px solid var(--border)",
+                          padding: "2px 8px",
+                          borderRadius: "10px",
+                          fontSize: "0.72rem",
+                          cursor: "pointer",
+                          fontWeight: formData.modelName === m ? "600" : "400",
+                        }}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -211,7 +281,7 @@ export default function SettingsModal({
                     type={showApiKey ? "text" : "password"}
                     value={formData.apiKey}
                     onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                    placeholder="sk-..."
+                    placeholder="sk-... (solo para modelos en la nube)"
                     style={{
                       width: "100%",
                       padding: "8px 36px 8px 12px",
@@ -249,26 +319,23 @@ export default function SettingsModal({
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
                   <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: "500" }}>
-                    Top-K Fragmentos Recuperados (Contexto):
+                    Top-K Fragmentos Recuperados por Consulta:
                   </label>
-                  <span style={{ fontSize: "0.82rem", fontWeight: "700", color: "var(--accent)" }}>{formData.topK}</span>
+                  <span style={{ fontSize: "0.82rem", fontWeight: "700", color: "var(--accent)" }}>{formData.topK} Chunks</span>
                 </div>
                 <input
                   type="range"
-                  min="3"
-                  max="15"
+                  min="2"
+                  max="12"
                   value={formData.topK}
                   onChange={(e) => setFormData({ ...formData, topK: parseInt(e.target.value, 10) })}
                   style={{ width: "100%", cursor: "pointer", accentColor: "var(--accent)" }}
                 />
-                <span style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>
-                  Determina cuántos fragmentos vectoriales de máxima similitud en PostgreSQL pgvector se inyectan al prompt.
-                </span>
               </div>
 
               <div>
                 <label style={{ display: "block", fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "6px", fontWeight: "500" }}>
-                  Tamaño de Chunk (Caracteres):
+                  Tamaño de Fragmento (Chunk Size en caracteres):
                 </label>
                 <input
                   type="number"
@@ -312,6 +379,32 @@ export default function SettingsModal({
 
           {activeTab === "voice" && (
             <>
+              <div>
+                <label style={{ display: "block", fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "6px", fontWeight: "500" }}>
+                  Voz Predeterminada del Lector:
+                </label>
+                <select
+                  value={formData.voiceURI}
+                  onChange={(e) => setFormData({ ...formData, voiceURI: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    background: "var(--bg-base)",
+                    border: "1px solid var(--border)",
+                    color: "var(--text)",
+                    fontSize: "0.85rem",
+                    outline: "none",
+                  }}
+                >
+                  {voiceList.map((v, idx) => (
+                    <option key={idx} value={v.uri}>
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
                   <label style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: "500" }}>
@@ -369,7 +462,7 @@ export default function SettingsModal({
           <button
             onClick={handleSave}
             style={{
-              padding: "8px 18px",
+              padding: "8px 20px",
               borderRadius: "6px",
               background: savedSuccess ? "#10b981" : "var(--accent)",
               border: "none",
@@ -380,11 +473,11 @@ export default function SettingsModal({
               display: "flex",
               alignItems: "center",
               gap: "6px",
-              transition: "background 0.2s ease",
+              transition: "all 0.2s ease",
             }}
           >
             {savedSuccess ? <Check size={16} /> : <Save size={16} />}
-            <span>{savedSuccess ? "Guardado" : "Guardar Parámetros"}</span>
+            <span>{savedSuccess ? "Guardado" : "Guardar Cambios"}</span>
           </button>
         </div>
       </div>

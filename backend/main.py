@@ -222,10 +222,11 @@ CONTEXTO DOCUMENTAL E IMÁGENES:
         if p not in seen_pages:
             seen_pages.append(p)
 
-    # Si el LLM no puso explícitamente [Pág. X] pero consultamos páginas del documento, añadirlas para garantizar citas
+    # Si el LLM no puso explícitamente [Pág. X] pero consultamos páginas del documento, registrar las páginas consultadas
     if not seen_pages and rag_info.get("retrieved_pages"):
         seen_pages = rag_info["retrieved_pages"][:3]
-        clean_ans += "\n\n📌 *Fuentes consultadas en el documento: " + ", ".join(f"[Pág. {p}]" for p in seen_pages) + "*"
+        if seen_pages and not re.search(r'\[(?:Pág\.|Página|Pag\.)\s*\d+\]', clean_ans):
+            clean_ans = clean_ans.rstrip() + f" [Pág. {seen_pages[0]}]"
 
     target_page = seen_pages[0] if seen_pages else rag_info["target_page"]
     highlight_words = extract_highlight_words(req.prompt, clean_ans, rag_info["target_content"])
