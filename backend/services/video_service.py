@@ -153,6 +153,9 @@ def generate_ai_video(subject: str) -> str:
         with urllib.request.urlopen(req, timeout=12) as response:
             arr = np.frombuffer(response.read(), dtype=np.uint8)
             key_img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if key_img is not None:
+                from .image_service import remove_watermark
+                key_img = remove_watermark(key_img)
     except Exception as e:
         print(f"[VIDEO] Fallback visual: {e}")
         
