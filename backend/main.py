@@ -10,7 +10,7 @@ from .config import settings
 from .database import db
 from .services.pdf_service import process_and_index_pdf, get_indexed_documents, delete_document, get_document_full_text
 from .services.rag_service import retrieve_rag_context, extract_highlight_words
-from .services.ai import call_llm
+from .services.ai import call_llm, detect_account_models
 from .services.video_service import detect_video_request, generate_ai_video, VIDEOS_DIR
 from .services.image_service import detect_image_request, generate_ai_image, IMAGES_DIR
 from .services.audio_service import detect_audio_request, generate_ai_audio, AUDIOS_DIR
@@ -62,6 +62,20 @@ class SummaryRequest(BaseModel):
     provider: Optional[str] = "Ollama (Local)"
     api_key: Optional[str] = ""
     model_name: Optional[str] = ""
+
+class DetectModelsRequest(BaseModel):
+    provider: str
+    api_key: Optional[str] = ""
+
+# --- RUTAS DE MODELOS E INTELIGENCIA ARTIFICIAL ---
+
+@app.post("/api/models/detect")
+def detect_models_endpoint(req: DetectModelsRequest):
+    """Detecta automáticamente el plan de la cuenta del usuario y sus modelos disponibles."""
+    try:
+        return detect_account_models(provider=req.provider, api_key=req.api_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al detectar modelos de la cuenta: {str(e)}")
 
 # --- RUTAS DE DOCUMENTOS ---
 

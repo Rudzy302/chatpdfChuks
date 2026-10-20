@@ -97,6 +97,23 @@ export async function generateVideo({ filename, summaryText = "", provider = "Ol
   return res.json();
 }
 
+export async function detectAvailableModels({ provider = "Ollama (Local)", apiKey = "" } = {}) {
+  const res = await fetch(`${API_BASE}/models/detect`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      provider,
+      api_key: apiKey,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Error al detectar modelos" }));
+    throw new Error(err.detail || "No se pudieron obtener los modelos de la cuenta");
+  }
+  return res.json();
+}
+
 export async function shutdownSystem() {
   try {
     await fetch(`${API_BASE}/system/shutdown`, { method: "POST" });
@@ -104,4 +121,5 @@ export async function shutdownSystem() {
     // Si la conexión se cierra porque el servidor murió, es el resultado esperado
   }
 }
+
 
