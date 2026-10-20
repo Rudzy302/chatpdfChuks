@@ -77,23 +77,24 @@ def main():
         creationflags=creationflags
     )
     
-    # Dar tiempo a que Node y FastAPI inicialicen
-    time.sleep(3)
+    # Esperar a que el backend esté listo antes de abrir el navegador (hasta 15 seg)
+    for _ in range(15):
+        if is_backend_alive():
+            break
+        time.sleep(1)
+        
     webbrowser.open("http://127.0.0.1:4173")
     
-    # Monitor de ciclo de vida
-    consecutive_failures = 0
+    # Monitor de ciclo de vida: se mantiene activo hasta que uno de los procesos termine
     try:
         while True:
             time.sleep(2)
+            # Si el backend terminó (por ejemplo mediante el botón Apagar de la UI /api/system/shutdown)
             if backend_proc.poll() is not None:
                 break
-            if not is_backend_alive():
-                consecutive_failures += 1
-                if consecutive_failures >= 3:
-                    break
-            else:
-                consecutive_failures = 0
+            # Si el frontend terminó
+            if frontend_proc.poll() is not None:
+                break
     except KeyboardInterrupt:
         pass
     finally:

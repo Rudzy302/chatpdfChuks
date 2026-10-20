@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8008/api";
+const API_BASE = (typeof window !== "undefined" && window.location.port === "4173") ? "/api" : "http://127.0.0.1:8008/api";
 
 export async function fetchDocuments() {
   const res = await fetch(`${API_BASE}/documents`);
