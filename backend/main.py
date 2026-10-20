@@ -13,6 +13,7 @@ from .services.rag_service import retrieve_rag_context, extract_highlight_words
 from .services.ai import call_llm
 from .services.video_service import detect_video_request, generate_ai_video, VIDEOS_DIR
 from .services.image_service import detect_image_request, generate_ai_image, IMAGES_DIR
+from .services.audio_service import detect_audio_request, generate_ai_audio, AUDIOS_DIR
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -127,11 +128,20 @@ def get_generated_image(filename: str):
         raise HTTPException(status_code=404, detail="Imagen no encontrada.")
     return FileResponse(file_path, media_type="image/jpeg", filename=filename)
 
+@app.get("/api/audio/{filename}")
+def get_generated_audio(filename: str):
+    """Sirve archivos WAV/OGG de efectos de sonido y canciones generadas con IA."""
+    file_path = os.path.join(AUDIOS_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Audio no encontrado.")
+    media_type = "audio/ogg" if filename.endswith(".ogg") else "audio/wav"
+    return FileResponse(file_path, media_type=media_type, filename=filename)
+
 # --- RUTA DE CHAT RAG ---
 
 @app.post("/api/chat")
 def chat_endpoint(req: ChatRequest):
-    """Endpoint principal de conversación con RAG, citas automáticas, generación de video/imagen y OCR."""
+    """Endpoint principal de conversación con RAG, citas automáticas, generación de video/imagen/audio y OCR."""
     clean_p = req.prompt.strip().lower()
     
     # Detección de solicitud de generación de video directo en el chat
@@ -179,6 +189,36 @@ def chat_endpoint(req: ChatRequest):
             }
         except Exception as e:
             print(f"[IMAGE GENERATION ERROR] {e}")
+
+    # Detección de solicitud de audio / efectos de sonido / canciones
+    is_aud, aud_type, aud_subject = detect_audio_request(req.prompt)
+    if is_aud:
+        try:
+            aud_fn, aud_title, atype, aud_desc = generate_ai_audio(aud_subject, aud_type)
+            aud_url = f"http://127.0.0.1:8008/api/audio/{aud_fn}"
+            if atype == "song":
+                ans_text = f"🎶 **Composición musical de '{aud_subject.title()}':**\n\n{aud_desc}\n\nAquí tienes la pista musical generada para escuchar o descargar:"
+            else:
+                ans_text = f"🔊 **Efecto de sonido de '{aud_subject.title()}':**\n\n{aud_desc}\n\nAquí tienes el audio listo para escuchar o descargar:"
+
+            return {
+                "answer": ans_text,
+                "audio_url": aud_url,
+                "audio_title": aud_title,
+                "audio_type": atype,
+                "citations": [],
+                "target_content": "",
+                "target_page": 1,
+                "target_file": req.active_doc,
+                "highlight_words": [],
+                "suggested_questions": [
+                    "¿Puedes componer una canción con un ritmo más rápido?",
+                    "Genera el sonido de la lluvia y tormenta",
+                    "¿Puedes generar una imagen sobre esta música?"
+                ]
+            }
+        except Exception as e:
+            print(f"[AUDIO GENERATION ERROR] {e}")
 
     # 2. Recuperación RAG
     rag_info = retrieve_rag_context(req.prompt, req.active_doc, top_k=req.top_k)

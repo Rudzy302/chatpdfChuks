@@ -175,6 +175,9 @@ export default function App() {
         target_content: res.target_content || "",
         video_url: res.video_url || null,
         image_url: res.image_url || null,
+        audio_url: res.audio_url || null,
+        audio_title: res.audio_title || null,
+        audio_type: res.audio_type || null,
       };
 
       setMessages((prev) => [...prev, assistantMsg]);

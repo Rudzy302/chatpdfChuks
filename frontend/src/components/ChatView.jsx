@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, Sparkles, Volume2, VolumeX, Pause, Play, Square, Mic, MicOff, Headphones, Download, Film, ChevronDown, Image as ImageIcon } from "lucide-react";
+import { Send, Sparkles, Volume2, VolumeX, Pause, Play, Square, Mic, MicOff, Headphones, Download, Film, ChevronDown, Image as ImageIcon, Music, Maximize2 } from "lucide-react";
+import ImageLightboxModal from "./ImageLightboxModal";
 
 export default function ChatView({
   messages = [],
@@ -14,6 +15,7 @@ export default function ChatView({
 }) {
   const [input, setInput] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState(null);
   
   // Estado del lector de voz con soporte de pausa/reanudación
   const [speakingIndex, setSpeakingIndex] = useState(null);
@@ -143,45 +145,89 @@ export default function ChatView({
     }
   }, []);
 
-  // 2. Inicializar Speech Recognition
-  useEffect(() => {
+  // 2. Reconocimiento de voz continuo y en tiempo real hacia el prompt
+  const toggleListening = async () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
+    if (!SpeechRecognition) {
+      alert("El reconocimiento de voz no está habilitado en este navegador. Te recomendamos usar Google Chrome o Microsoft Edge.");
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      // 1. Solicitar y asegurar permiso de micrófono del navegador
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+
       const recognition = new SpeechRecognition();
-      recognition.continuous = false;
+      recognition.continuous = true;
+      recognition.interimResults = true;
       recognition.lang = "es-ES";
-      recognition.interimResults = false;
+
+      let initialText = input ? input.trim() + " " : "";
 
       recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setInput((prev) => (prev ? prev + " " + transcript : transcript));
+        let interimText = "";
+        let finalText = "";
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const res = event.results[i];
+          if (res.isFinal) {
+            finalText += res[0].transcript;
+          } else {
+            interimText += res[0].transcript;
+          }
+        }
+
+        if (finalText) {
+          initialText += finalText + " ";
+          setInput(initialText.trim());
+        } else if (interimText) {
+          setInput(initialText + interimText);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.warn("[SPEECH ERROR]", event.error);
+        if (event.error === "not-allowed") {
+          alert("Permiso denegado: Por favor habilita el micrófono en el icono de la barra de direcciones de tu navegador.");
+        }
         setIsListening(false);
       };
 
-      recognition.onerror = () => setIsListening(false);
-      recognition.onend = () => setIsListening(false);
+      recognition.onend = () => {
+        setIsListening(false);
+      };
 
+      recognition.start();
       recognitionRef.current = recognition;
-    }
-  }, []);
-
-  const toggleListening = () => {
-    if (!recognitionRef.current) {
-      alert("El reconocimiento de voz no está soportado en este navegador.");
-      return;
-    }
-    if (isListening) {
-      recognitionRef.current.stop();
+      setIsListening(true);
+    } catch (err) {
+      console.error("[MIC PERMISSION ERROR]", err);
+      alert("No se pudo iniciar el micrófono. Asegúrate de otorgar permisos al navegador.");
       setIsListening(false);
-    } else {
-      try {
-        recognitionRef.current.start();
-        setIsListening(true);
-      } catch (err) {
-        console.error(err);
-      }
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+    };
+  }, []);
 
   // 3. Control completo de TTS: Play, Pausa, Reanudar y Detener con modulación real
   const handlePlayVoice = (text, idx) => {
@@ -496,29 +542,86 @@ export default function ChatView({
               >
                 {renderMessageContent(m.content, isUser, idx)}
 
-                {/* Visualizador de Imagen Digital Generada por IA */}
+                {/* Visualizador de Imagen Digital Generada por IA con Lightbox Interactivo */}
                 {m.image_url && (
                   <div style={{ marginTop: "14px", borderRadius: "10px", overflow: "hidden", border: "1px solid var(--border)", background: "#050505", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
-                    <img
-                      src={m.image_url}
-                      alt="Imagen generada por IA"
-                      style={{ width: "100%", maxHeight: "380px", display: "block", objectFit: "contain", background: "#080808" }}
-                    />
+                    <div
+                      onClick={() => setLightboxImage(m.image_url)}
+                      style={{
+                        position: "relative",
+                        cursor: "zoom-in",
+                        overflow: "hidden",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "#080808",
+                      }}
+                      title="Haz clic para ver en pantalla completa"
+                    >
+                      <img
+                        src={m.image_url}
+                        alt="Imagen generada por IA"
+                        style={{ width: "100%", maxHeight: "380px", display: "block", objectFit: "contain", transition: "transform 0.2s ease" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.015)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+                      />
+                      <div
+                        style={{
+                          position: "absolute",
+                          bottom: "10px",
+                          right: "10px",
+                          background: "rgba(0, 0, 0, 0.75)",
+                          color: "#ffffff",
+                          fontSize: "0.74rem",
+                          padding: "4px 10px",
+                          borderRadius: "16px",
+                          backdropFilter: "blur(6px)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        <Maximize2 size={12} />
+                        <span>Clic para ampliar</span>
+                      </div>
+                    </div>
                     <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-base)", fontSize: "0.8rem", borderTop: "1px solid var(--border)" }}>
                       <span style={{ color: "var(--text)", fontWeight: "500", display: "flex", alignItems: "center", gap: "6px" }}>
                         <ImageIcon size={14} color="var(--accent)" />
                         Imagen Digital Generada por IA (1024x1024)
                       </span>
-                      <a
-                        href={m.image_url}
-                        download
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ color: "var(--accent)", textDecoration: "none", fontWeight: "600", display: "flex", alignItems: "center", gap: "5px" }}
-                      >
-                        <Download size={14} />
-                        Descargar Imagen
-                      </a>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button
+                          type="button"
+                          onClick={() => setLightboxImage(m.image_url)}
+                          style={{
+                            background: "transparent",
+                            border: "1px solid var(--border)",
+                            color: "var(--text)",
+                            borderRadius: "6px",
+                            padding: "3px 8px",
+                            fontSize: "0.75rem",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          <Maximize2 size={12} />
+                          Ver grande
+                        </button>
+                        <a
+                          href={m.image_url}
+                          download
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: "var(--accent)", textDecoration: "none", fontWeight: "600", display: "flex", alignItems: "center", gap: "5px" }}
+                        >
+                          <Download size={14} />
+                          Descargar Imagen
+                        </a>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -549,6 +652,77 @@ export default function ChatView({
                         Descargar MP4
                       </a>
                     </div>
+                  </div>
+                )}
+
+                {/* Reproductor de Audio / Efectos de Sonido / Canciones IA */}
+                {m.audio_url && (
+                  <div
+                    style={{
+                      marginTop: "14px",
+                      borderRadius: "10px",
+                      overflow: "hidden",
+                      border: "1px solid var(--border)",
+                      background: "linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.95) 100%)",
+                      boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+                      padding: "12px 14px",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div
+                          style={{
+                            width: "30px",
+                            height: "30px",
+                            borderRadius: "50%",
+                            background: m.audio_type === "song" ? "rgba(236, 72, 153, 0.2)" : "rgba(14, 165, 233, 0.2)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: m.audio_type === "song" ? "#ec4899" : "var(--accent)",
+                          }}
+                        >
+                          {m.audio_type === "song" ? <Music size={16} /> : <Volume2 size={16} />}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: "600", fontSize: "0.85rem", color: "var(--text)" }}>
+                            {m.audio_title || (m.audio_type === "song" ? "Composición Musical IA" : "Efecto de Sonido")}
+                          </div>
+                          <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                            {m.audio_type === "song" ? "Pista Estéreo 44.1 kHz • Composición Armónica" : "Audio de Alta Fidelidad"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <a
+                        href={m.audio_url}
+                        download
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          color: "var(--accent)",
+                          textDecoration: "none",
+                          fontSize: "0.76rem",
+                          fontWeight: "600",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          background: "var(--bg-base)",
+                          padding: "4px 10px",
+                          borderRadius: "6px",
+                          border: "1px solid var(--border)",
+                        }}
+                      >
+                        <Download size={13} />
+                        Descargar
+                      </a>
+                    </div>
+
+                    <audio
+                      src={m.audio_url}
+                      controls
+                      style={{ width: "100%", height: "36px", outline: "none", borderRadius: "6px" }}
+                    />
                   </div>
                 )}
               </div>
@@ -760,17 +934,22 @@ export default function ChatView({
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Pregunta sobre el documento o escribe 'genera una imagen...' o 'genera un video...'"
+          placeholder={
+            isListening
+              ? "🎙️ Escuchando... habla y verás tus palabras aquí en tiempo real"
+              : "Pregunta sobre el PDF, o escribe 'genera una imagen...', 'sonido de un perro', 'canción lofi'..."
+          }
           disabled={sending}
           style={{
             flex: 1,
             padding: "9px 14px",
-            background: "var(--bg-base)",
-            border: "1px solid var(--border)",
+            background: isListening ? "rgba(239, 68, 68, 0.08)" : "var(--bg-base)",
+            border: isListening ? "1px solid #ef4444" : "1px solid var(--border)",
             borderRadius: "8px",
             color: "var(--text)",
             fontSize: "0.88rem",
             outline: "none",
+            transition: "all 0.2s ease",
           }}
         />
 
@@ -794,6 +973,11 @@ export default function ChatView({
           <Send size={16} />
         </button>
       </form>
+
+      {/* Modal Lightbox de Visualización de Imagen en Pantalla Completa */}
+      {lightboxImage && (
+        <ImageLightboxModal imageUrl={lightboxImage} onClose={() => setLightboxImage(null)} />
+      )}
     </div>
   );
 }
