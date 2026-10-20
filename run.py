@@ -47,7 +47,7 @@ def kill_proc_tree(pid):
 
 def is_backend_alive():
     try:
-        req = urllib.request.urlopen("http://localhost:8000/api/documents", timeout=1)
+        req = urllib.request.urlopen("http://localhost:8008/api/documents", timeout=1)
         return req.status == 200
     except Exception:
         return False
@@ -63,22 +63,22 @@ def main():
     if os.name == "nt":
         creationflags = subprocess.CREATE_NO_WINDOW
         
-    # Iniciar backend
+    # Iniciar backend en puerto 8008
     backend_proc = subprocess.Popen(
-        [py_bin, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"],
+        [py_bin, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8008"],
         cwd=root_dir,
         creationflags=creationflags
     )
     
-    # Iniciar frontend
+    # Iniciar frontend en puerto 5173
     frontend_proc = subprocess.Popen(
-        [npm_bin, "run", "dev", "--", "--port", "3000"],
+        [npm_bin, "run", "dev", "--", "--port", "5173"],
         cwd=frontend_dir,
         creationflags=creationflags
     )
     
     time.sleep(2)
-    webbrowser.open("http://localhost:3000")
+    webbrowser.open("http://localhost:5173")
     
     # Monitor de ciclo de vida: si el backend recibe la señal de shutdown desde la interfaz o el usuario sale, se tumba todo
     try:
