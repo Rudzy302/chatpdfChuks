@@ -381,17 +381,39 @@ def detect_account_models(provider: str, api_key: str = "") -> dict:
                 req = urllib.request.Request(url, headers=headers_user_agent)
                 with urllib.request.urlopen(req, timeout=8) as res:
                     data = json.loads(res.read().decode("utf-8"))
+                    raw_models = []
                     for m in data.get("models", []):
                         methods = m.get("supportedGenerationMethods", [])
                         if "generateContent" in methods:
                             mid = m["name"].replace("models/", "")
-                            models.append({
+                            display_n = m.get("displayName", mid)
+                            
+                            # Prioridad de ordenación: gemini-2.5, gemini-2.0, gemini-1.5 al inicio
+                            priority = 99
+                            if "gemini-2.5-flash" in mid:
+                                priority = 1
+                            elif "gemini-2.0-flash" in mid:
+                                priority = 2
+                            elif "gemini-1.5-pro" in mid:
+                                priority = 3
+                            elif "gemini-1.5-flash" in mid:
+                                priority = 4
+                            elif mid.startswith("gemini-"):
+                                priority = 10
+                            elif "deep-research" in mid:
+                                priority = 30
+                                display_n = f"Google Deep Research ({display_n})"
+
+                            raw_models.append((priority, {
                                 "id": mid,
-                                "name": m.get("displayName", mid),
+                                "name": display_n,
                                 "category": "Google Gemini",
                                 "is_free": True,
                                 "context_length": m.get("inputTokenLimit", 1000000)
-                            })
+                            }))
+                    
+                    raw_models.sort(key=lambda x: (x[0], x[1]["name"]))
+                    models = [m[1] for m in raw_models]
             except Exception:
                 pass
 
