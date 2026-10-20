@@ -2,11 +2,9 @@ import React, { useState, useEffect } from "react";
 import Sidebar from "./components/Sidebar";
 import ChatView from "./components/ChatView";
 import PdfViewer from "./components/PdfViewer";
-import SummaryView from "./components/SummaryView";
 import AudioReaderModal from "./components/AudioReaderModal";
 import SettingsModal from "./components/SettingsModal";
 import { fetchDocuments, deleteDocument, sendChatMessage, getPdfFileUrl, generateVideo } from "./services/api";
-import { MessageSquare, FileText, Sparkles, Headphones } from "lucide-react";
 
 const THEMES = {
   "Minimal Dark (Grafito)": {
@@ -61,11 +59,6 @@ export default function App() {
   const [targetPage, setTargetPage] = useState(1);
   const [highlightWords, setHighlightWords] = useState([]);
 
-  // Visibilidad de paneles independientes
-  const [showChat, setShowChat] = useState(true);
-  const [showPdf, setShowPdf] = useState(true);
-  const [showSummary, setShowSummary] = useState(false);
-
   // Modal de Video Storyboard
   const [videoStoryboard, setVideoStoryboard] = useState(null);
   const [generatingVideo, setGeneratingVideo] = useState(false);
@@ -80,7 +73,7 @@ export default function App() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content: "Hola. Document Studio está listo con soporte para reconocimiento por micrófono, lector de voz y resaltado por citas. Toda respuesta citará la página exacta con un círculo numérico para saltar a la fuente.",
+      content: "Hola. Document Studio está listo con soporte para reconocimiento por micrófono, lector de voz, generación de imágenes y resaltado por citas. Toda respuesta citará la página exacta con un círculo numérico para saltar a la fuente.",
     },
   ]);
   const [suggestedQuestions, setSuggestedQuestions] = useState([
@@ -141,17 +134,18 @@ export default function App() {
     loadDocs();
     setActiveDoc(fname);
 
-    // 3 & 4. Si el backend generó resumen automático y preguntas sugeridas, mostrarlas de inmediato
-    if (uploadData?.auto_summary) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `📄 **Resumen inicial automático de '${fname}':**\n\n${uploadData.auto_summary}`,
-          citations: [1],
-        },
-      ]);
-    }
+    // Resumen instantáneo directo en el chat al terminar de indexar ("al toque insta")
+    const summaryText = uploadData?.auto_summary || `Documento '${fname}' indexado exitosamente. Ya puedes consultar cualquier duda sobre sus páginas.`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        content: `📄 **Resumen instantáneo de '${fname}':**\n\n${summaryText}`,
+        citations: [1],
+        target_content: summaryText.slice(0, 150),
+      },
+    ]);
+
     if (uploadData?.suggested_questions && uploadData.suggested_questions.length > 0) {
       setSuggestedQuestions(uploadData.suggested_questions);
     }
@@ -180,6 +174,7 @@ export default function App() {
         citations: res.citations || [],
         target_content: res.target_content || "",
         video_url: res.video_url || null,
+        image_url: res.image_url || null,
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
@@ -189,7 +184,6 @@ export default function App() {
       if (res.suggested_questions && res.suggested_questions.length > 0) {
         setSuggestedQuestions(res.suggested_questions);
       }
-      // Inicialmente NO sobrecargamos con marcado de todas las palabras, se activa limpiamente por círculo o cita
       setHighlightWords([]);
     } catch (err) {
       setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err.message}` }]);
@@ -198,12 +192,10 @@ export default function App() {
     }
   };
 
-  // 5. Salto y marcado de la parte citada al hacer clic en el círculo con número de orden
+  // Salto y marcado de la parte citada al hacer clic en el círculo con número de orden
   const handleNavigateToPage = (pageNum, citedContent) => {
     setTargetPage(pageNum);
-    setShowPdf(true);
     if (citedContent) {
-      // Extraer términos clave exactos del fragmento citado específico
       const words = citedContent.match(/\b[A-Za-z0-9_áéíóúÁÉÍÓÚñÑ]{3,}\b/g) || [];
       const filtered = words.filter(
         (w) => !["para", "como", "este", "esta", "sobre", "desde", "entre", "texto", "pagina", "archivo"].includes(w.toLowerCase())
@@ -212,7 +204,7 @@ export default function App() {
     }
   };
 
-  // 6. Resaltado instantáneo al pasar el cursor (hover) por citas o círculos numéricos
+  // Resaltado instantáneo al pasar el cursor (hover) por citas o círculos numéricos
   const handleHoverCitation = (pageNum, citedContent) => {
     if (!pageNum) {
       setHighlightWords([]);
@@ -227,7 +219,7 @@ export default function App() {
     }
   };
 
-  // 2. Generación de Video Resumen
+  // Generación de Video Resumen
   const handleGenerateVideo = async () => {
     if (!activeDoc || activeDoc === "Todos los documentos") {
       alert("Selecciona un documento primero para generar su video resumen.");
@@ -250,7 +242,6 @@ export default function App() {
     }
   };
 
-  const activeViewsCount = [showChat, showPdf, showSummary].filter(Boolean).length;
   const pdfUrl = activeDoc && activeDoc !== "Todos los documentos" ? getPdfFileUrl(activeDoc) : null;
 
   return (
@@ -292,115 +283,63 @@ export default function App() {
             <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>/ {activeDoc || "Todos los documentos"}</span>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <button
-              onClick={() => setShowChat(!showChat)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                borderRadius: "6px",
-                fontSize: "0.82rem",
-                cursor: "pointer",
-                background: showChat ? "var(--accent)" : "transparent",
-                color: showChat ? "#ffffff" : "var(--text)",
-                border: "1px solid " + (showChat ? "var(--accent)" : "var(--border)"),
-              }}
-            >
-              <MessageSquare size={14} />
-              Chat ({showChat ? "Activo" : "Oculto"})
-            </button>
-
-            <button
-              onClick={() => setShowPdf(!showPdf)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                borderRadius: "6px",
-                fontSize: "0.82rem",
-                cursor: "pointer",
-                background: showPdf ? "var(--accent)" : "transparent",
-                color: showPdf ? "#ffffff" : "var(--text)",
-                border: "1px solid " + (showPdf ? "var(--accent)" : "var(--border)"),
-              }}
-            >
-              <FileText size={14} />
-              Documento ({showPdf ? "Activo" : "Oculto"})
-            </button>
-
-            <button
-              onClick={() => setShowSummary(!showSummary)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                borderRadius: "6px",
-                fontSize: "0.82rem",
-                cursor: "pointer",
-                background: showSummary ? "var(--accent)" : "transparent",
-                color: showSummary ? "#ffffff" : "var(--text)",
-                border: "1px solid " + (showSummary ? "var(--accent)" : "var(--border)"),
-              }}
-            >
-              <Sparkles size={14} />
-              Resumen ({showSummary ? "Activo" : "Oculto"})
-            </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", background: "var(--bg-base)", padding: "4px 10px", borderRadius: "12px", border: "1px solid var(--border)" }}>
+              {activeDoc && activeDoc !== "Todos los documentos" ? `Documento: ${activeDoc}` : "Modo Asistente General"}
+            </span>
           </div>
         </header>
 
-        {/* Dynamic Panels Layout */}
+        {/* Dual Panel Workspace: Chat (Izquierda) + Visor PDF (Derecha) */}
         <div
           style={{
             flex: 1,
             display: "grid",
-            gridTemplateColumns:
-              activeViewsCount === 3
-                ? "35% 40% 25%"
-                : activeViewsCount === 2
-                ? "50% 50%"
-                : "100%",
+            gridTemplateColumns: "48% 52%",
             height: "calc(100vh - 50px)",
             overflow: "hidden",
           }}
         >
-          {showChat && (
-            <div style={{ borderRight: activeViewsCount > 1 ? "1px solid var(--border)" : "none", height: "100%", overflow: "hidden" }}>
-              <ChatView
-                messages={messages}
-                onSendMessage={handleSendMessage}
-                onNavigateToPage={handleNavigateToPage}
-                onHoverCitation={handleHoverCitation}
-                sending={sending}
-                aiSettings={aiSettings}
-                onUpdateAiSettings={setAiSettings}
-                suggestedQuestions={suggestedQuestions}
-                onOpenAudioReader={handleGenerateVideo}
-                activeDoc={activeDoc}
-              />
-            </div>
-          )}
+          <div style={{ borderRight: "1px solid var(--border)", height: "100%", overflow: "hidden" }}>
+            <ChatView
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              onNavigateToPage={handleNavigateToPage}
+              onHoverCitation={handleHoverCitation}
+              sending={sending}
+              aiSettings={aiSettings}
+              onUpdateAiSettings={setAiSettings}
+              suggestedQuestions={suggestedQuestions}
+              onOpenAudioReader={handleGenerateVideo}
+              activeDoc={activeDoc}
+            />
+          </div>
 
-          {showPdf && (
-            <div style={{ borderRight: activeViewsCount === 3 ? "1px solid var(--border)" : "none", height: "100%", overflow: "hidden" }}>
-              {pdfUrl ? (
-                <PdfViewer fileUrl={pdfUrl} targetPage={targetPage} highlightWords={highlightWords} />
-              ) : (
-                <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "0.9rem" }}>
-                  Selecciona un documento en la barra lateral para visualizarlo.
+          <div style={{ height: "100%", overflow: "hidden" }}>
+            {pdfUrl ? (
+              <PdfViewer fileUrl={pdfUrl} targetPage={targetPage} highlightWords={highlightWords} />
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "100%",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--text-muted)",
+                  fontSize: "0.9rem",
+                  padding: "20px",
+                  textAlign: "center",
+                }}
+              >
+                <div style={{ fontSize: "2.4rem", marginBottom: "8px" }}>📄</div>
+                <div style={{ fontWeight: "600", color: "var(--text)" }}>Visualizador de Documento PDF</div>
+                <div style={{ fontSize: "0.82rem", marginTop: "6px", maxWidth: "280px" }}>
+                  Sube o selecciona un archivo PDF en la barra lateral para explorarlo página por página.
                 </div>
-              )}
-            </div>
-          )}
-
-          {showSummary && (
-            <div style={{ height: "100%", overflow: "hidden" }}>
-              <SummaryView filename={activeDoc} aiSettings={aiSettings} onNavigateToPage={handleNavigateToPage} />
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

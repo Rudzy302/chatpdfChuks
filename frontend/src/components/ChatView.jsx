@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Send, Sparkles, Volume2, VolumeX, Pause, Play, Square, Mic, MicOff, Headphones, Download, Film, ChevronDown } from "lucide-react";
+import { Send, Sparkles, Volume2, VolumeX, Pause, Play, Square, Mic, MicOff, Headphones, Download, Film, ChevronDown, Image as ImageIcon } from "lucide-react";
 
 export default function ChatView({
   messages = [],
@@ -20,66 +20,126 @@ export default function ChatView({
   const [isPaused, setIsPaused] = useState(false);
   const [currentWordCharIndex, setCurrentWordCharIndex] = useState(-1);
   const [availableVoices, setAvailableVoices] = useState([]);
-  const [selectedVoiceURI, setSelectedVoiceURI] = useState("");
+  const [selectedVoiceId, setSelectedVoiceId] = useState("");
   
   // Estado de cita activa en hover (para iluminar la frase exacta citada dentro del chat)
   const [hoveredCitationKey, setHoveredCitationKey] = useState(null);
   
   const recognitionRef = useRef(null);
 
-  // 1. Cargar voces del sistema (garantizando mínimo 10 opciones de alta calidad)
+  // 1. Cargar voces reales del sistema y construir 10+ perfiles acústicos que realmente cambian el sonido
   useEffect(() => {
     const updateVoices = () => {
       if (!window.speechSynthesis) return;
       const allVoices = window.speechSynthesis.getVoices();
+      if (!allVoices || allVoices.length === 0) return;
+
+      const spanishVoices = allVoices.filter((v) => v.lang.toLowerCase().startsWith("es"));
+      const englishVoices = allVoices.filter((v) => v.lang.toLowerCase().startsWith("en"));
       
-      // Filtrar y ordenar voces: Español primero, luego inglés y multilenguaje
-      const spanishVoices = allVoices.filter((v) => v.lang.startsWith("es"));
-      const otherVoices = allVoices.filter((v) => !v.lang.startsWith("es"));
-      const combined = [...spanishVoices, ...otherVoices];
-      
-      // Mapear con nombres descriptivos
-      const curated = combined.slice(0, 15).map((v, i) => {
-        let label = v.name;
-        if (v.lang.startsWith("es")) {
-          label = `🇪🇸 ${v.name} (${v.lang})`;
-        } else if (v.lang.startsWith("en")) {
-          label = `🇺🇸 ${v.name} (${v.lang})`;
+      const vPrimary = spanishVoices[0] || allVoices[0];
+      const vSecondary = spanishVoices[1] || spanishVoices[0] || allVoices[0];
+      const vThird = spanishVoices[2] || spanishVoices[0] || allVoices[0];
+      const vEng = englishVoices[0] || allVoices[0];
+
+      // 10 perfiles acústicos distintos con voces reales asignadas y modulaciones audibles de tono y cadencia
+      const profiles = [
+        {
+          id: "p_nat",
+          name: `🇪🇸 ${vPrimary.name} (Natural Estándar)`,
+          voice: vPrimary,
+          pitch: 1.0,
+          rate: 1.0,
+        },
+        {
+          id: "p_deep",
+          name: "🎙️ Voz Masculina Grave (Barítono)",
+          voice: vPrimary,
+          pitch: 0.65,
+          rate: 0.95,
+        },
+        {
+          id: "p_high",
+          name: "✨ Voz Femenina Cálida / Aguda",
+          voice: vSecondary,
+          pitch: 1.45,
+          rate: 1.05,
+        },
+        {
+          id: "p_radio",
+          name: "📻 Voz Locutor Radial Dinámico",
+          voice: vPrimary,
+          pitch: 1.15,
+          rate: 1.25,
+        },
+        {
+          id: "p_doc",
+          name: "📖 Voz Documental Pausada",
+          voice: vPrimary,
+          pitch: 0.85,
+          rate: 0.80,
+        },
+        {
+          id: "p_fast",
+          name: "⚡ Voz Repaso Rápido",
+          voice: vSecondary,
+          pitch: 1.05,
+          rate: 1.45,
+        },
+        {
+          id: "p_calm",
+          name: "🌿 Voz Suave y Relajada",
+          voice: vThird,
+          pitch: 1.25,
+          rate: 0.88,
+        },
+        {
+          id: "p_robot",
+          name: "🤖 Voz Tecnológica Sintética",
+          voice: vPrimary,
+          pitch: 0.45,
+          rate: 1.10,
+        },
+        {
+          id: "p_express",
+          name: "🎭 Voz Expresiva y Enérgica",
+          voice: vSecondary,
+          pitch: 1.30,
+          rate: 1.15,
+        },
+        {
+          id: "p_en_nat",
+          name: `🇺🇸 ${vEng.name} (Bilingüe Nativo)`,
+          voice: vEng,
+          pitch: 1.0,
+          rate: 1.0,
+        },
+      ];
+
+      // Añadir voces del sistema adicionales si existen
+      spanishVoices.forEach((sv, idx) => {
+        if (!profiles.some((p) => p.name.includes(sv.name))) {
+          profiles.push({
+            id: `sys_es_${idx}`,
+            name: `🇪🇸 ${sv.name} (${sv.lang})`,
+            voice: sv,
+            pitch: 1.0,
+            rate: 1.0,
+          });
         }
-        return {
-          uri: v.voiceURI || v.name,
-          name: label,
-          lang: v.lang,
-          voiceObj: v,
-        };
       });
 
-      // Si el navegador tiene pocas voces, asegurar al menos 10 perfiles acústicos
-      if (curated.length < 10) {
-        const presets = [
-          { uri: "preset_es_nat", name: "🇪🇸 Sabina / Elena (Español Natural)", lang: "es-ES", pitch: 1.0, rate: 1.0 },
-          { uri: "preset_es_grav", name: "🇪🇸 Pablo / Carlos (Español Grave)", lang: "es-ES", pitch: 0.85, rate: 0.95 },
-          { uri: "preset_es_rad", name: "🇪🇸 Laura (Español Radial)", lang: "es-ES", pitch: 1.1, rate: 1.05 },
-          { uri: "preset_mx_nar", name: "🇲🇽 Raúl / Jorge (Español México Narrador)", lang: "es-MX", pitch: 0.95, rate: 1.0 },
-          { uri: "preset_mx_cal", name: "🇲🇽 Paulina (Español México Cálido)", lang: "es-MX", pitch: 1.05, rate: 0.95 },
-          { uri: "preset_ar_exp", name: "🇦🇷 Diego (Español Argentina Expresivo)", lang: "es-AR", pitch: 1.0, rate: 1.0 },
-          { uri: "preset_co_din", name: "🇨🇴 Sofía (Español Colombia Dinámico)", lang: "es-CO", pitch: 1.15, rate: 1.05 },
-          { uri: "preset_es_doc", name: "🇪🇸 Lector Documental Pro", lang: "es-ES", pitch: 0.9, rate: 0.9 },
-          { uri: "preset_en_corp", name: "🇺🇸 David / Guy (Corporativa Bilingüe)", lang: "en-US", pitch: 1.0, rate: 1.0 },
-          { uri: "preset_en_nat", name: "🇺🇸 Jenny / Zira (Profesional Bilingüe)", lang: "en-US", pitch: 1.05, rate: 1.0 },
-        ];
-        curated.push(...presets.slice(curated.length));
-      }
-
-      setAvailableVoices(curated);
-      if (curated.length > 0 && !selectedVoiceURI) {
-        setSelectedVoiceURI(curated[0].uri);
+      setAvailableVoices(profiles);
+      if (!selectedVoiceId && profiles.length > 0) {
+        setSelectedVoiceId(profiles[0].id);
       }
     };
 
     updateVoices();
     if (window.speechSynthesis) {
       window.speechSynthesis.onvoiceschanged = updateVoices;
+      setTimeout(updateVoices, 300);
+      setTimeout(updateVoices, 1000);
     }
   }, []);
 
@@ -123,7 +183,7 @@ export default function ChatView({
     }
   };
 
-  // 3. Control completo de TTS: Play, Pausa, Reanudar y Detener
+  // 3. Control completo de TTS: Play, Pausa, Reanudar y Detener con modulación real
   const handlePlayVoice = (text, idx) => {
     if (!window.speechSynthesis) {
       alert("El sintetizador de voz no está soportado en este navegador.");
@@ -150,16 +210,18 @@ export default function ChatView({
 
     const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
     utterance.lang = "es-ES";
-    utterance.rate = aiSettings?.voiceSpeed || 1.0;
 
-    // Asignar voz seleccionada
-    const matchedVoice = availableVoices.find((v) => v.uri === selectedVoiceURI);
-    if (matchedVoice) {
-      if (matchedVoice.voiceObj) {
-        utterance.voice = matchedVoice.voiceObj;
+    // Asignar voz real y modulación acústica seleccionada
+    const matched = availableVoices.find((v) => v.id === selectedVoiceId);
+    if (matched) {
+      if (matched.voice) {
+        utterance.voice = matched.voice;
+        utterance.lang = matched.voice.lang || "es-ES";
       }
-      if (matchedVoice.pitch) utterance.pitch = matchedVoice.pitch;
-      if (matchedVoice.rate) utterance.rate = matchedVoice.rate;
+      utterance.pitch = matched.pitch !== undefined ? matched.pitch : 1.0;
+      utterance.rate = (aiSettings?.voiceSpeed || 1.0) * (matched.rate || 1.0);
+    } else {
+      utterance.rate = aiSettings?.voiceSpeed || 1.0;
     }
 
     // Evento onboundary para iluminación de palabra (Karaoke)
@@ -434,6 +496,33 @@ export default function ChatView({
               >
                 {renderMessageContent(m.content, isUser, idx)}
 
+                {/* Visualizador de Imagen Digital Generada por IA */}
+                {m.image_url && (
+                  <div style={{ marginTop: "14px", borderRadius: "10px", overflow: "hidden", border: "1px solid var(--border)", background: "#050505", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
+                    <img
+                      src={m.image_url}
+                      alt="Imagen generada por IA"
+                      style={{ width: "100%", maxHeight: "380px", display: "block", objectFit: "contain", background: "#080808" }}
+                    />
+                    <div style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-base)", fontSize: "0.8rem", borderTop: "1px solid var(--border)" }}>
+                      <span style={{ color: "var(--text)", fontWeight: "500", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <ImageIcon size={14} color="var(--accent)" />
+                        Imagen Digital Generada por IA (1024x1024)
+                      </span>
+                      <a
+                        href={m.image_url}
+                        download
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "var(--accent)", textDecoration: "none", fontWeight: "600", display: "flex", alignItems: "center", gap: "5px" }}
+                      >
+                        <Download size={14} />
+                        Descargar Imagen
+                      </a>
+                    </div>
+                  </div>
+                )}
+
                 {/* Reproductor de Video Integrado H.264 + AAC */}
                 {m.video_url && (
                   <div style={{ marginTop: "14px", borderRadius: "10px", overflow: "hidden", border: "1px solid var(--border)", background: "#050505", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
@@ -464,7 +553,7 @@ export default function ChatView({
                 )}
               </div>
 
-              {/* Controles de Lector de Voz con Play, Pausa, Reanudar y Selector de 10+ Voces */}
+              {/* Controles de Lector de Voz con Play, Pausa, Reanudar y Selector de 10+ Voces Reales */}
               {!isUser && (
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "6px", flexWrap: "wrap" }}>
                   {!isSpeakingCurrent ? (
@@ -555,13 +644,13 @@ export default function ChatView({
                     </div>
                   )}
 
-                  {/* Selector rápido de 10+ voces */}
+                  {/* Selector rápido de 10+ voces reales */}
                   {availableVoices.length > 0 && (
                     <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
                       <select
-                        value={selectedVoiceURI}
+                        value={selectedVoiceId}
                         onChange={(e) => {
-                          setSelectedVoiceURI(e.target.value);
+                          setSelectedVoiceId(e.target.value);
                           if (isSpeakingCurrent) {
                             handleStopVoice();
                           }
@@ -569,27 +658,27 @@ export default function ChatView({
                         style={{
                           background: "var(--bg-card)",
                           border: "1px solid var(--border)",
-                          color: "var(--text-muted)",
-                          fontSize: "0.72rem",
-                          padding: "2px 20px 2px 8px",
+                          color: "var(--text)",
+                          fontSize: "0.74rem",
+                          padding: "3px 22px 3px 10px",
                           borderRadius: "12px",
                           cursor: "pointer",
                           outline: "none",
                           appearance: "none",
-                          maxWidth: "180px",
+                          maxWidth: "210px",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                         }}
-                        title="Seleccionar entre más de 10 voces disponibles"
+                        title="Seleccionar entre más de 10 voces acústicas distintas"
                       >
-                        {availableVoices.map((v, vIdx) => (
-                          <option key={vIdx} value={v.uri}>
+                        {availableVoices.map((v) => (
+                          <option key={v.id} value={v.id}>
                             {v.name}
                           </option>
                         ))}
                       </select>
-                      <ChevronDown size={11} color="var(--text-muted)" style={{ position: "absolute", right: "6px", pointerEvents: "none" }} />
+                      <ChevronDown size={11} color="var(--text-muted)" style={{ position: "absolute", right: "7px", pointerEvents: "none" }} />
                     </div>
                   )}
                 </div>
@@ -671,7 +760,7 @@ export default function ChatView({
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Pregunta sobre el documento o escribe 'genera un video de...'"
+          placeholder="Pregunta sobre el documento o escribe 'genera una imagen...' o 'genera un video...'"
           disabled={sending}
           style={{
             flex: 1,

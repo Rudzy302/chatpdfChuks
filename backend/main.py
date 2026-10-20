@@ -12,6 +12,7 @@ from .services.pdf_service import process_and_index_pdf, get_indexed_documents, 
 from .services.rag_service import retrieve_rag_context, extract_highlight_words
 from .services.ai import call_llm
 from .services.video_service import detect_video_request, generate_ai_video, VIDEOS_DIR
+from .services.image_service import detect_image_request, generate_ai_image, IMAGES_DIR
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -118,11 +119,19 @@ def get_generated_video(filename: str):
         raise HTTPException(status_code=404, detail="Video no encontrado.")
     return FileResponse(file_path, media_type="video/mp4", filename=filename)
 
+@app.get("/api/images/{filename}")
+def get_generated_image(filename: str):
+    """Sirve archivos JPG de imágenes generadas con IA directamente en el chat."""
+    file_path = os.path.join(IMAGES_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Imagen no encontrada.")
+    return FileResponse(file_path, media_type="image/jpeg", filename=filename)
+
 # --- RUTA DE CHAT RAG ---
 
 @app.post("/api/chat")
 def chat_endpoint(req: ChatRequest):
-    """Endpoint principal de conversación con RAG, citas automáticas, generación de video y OCR."""
+    """Endpoint principal de conversación con RAG, citas automáticas, generación de video/imagen y OCR."""
     clean_p = req.prompt.strip().lower()
     
     # Detección de solicitud de generación de video directo en el chat
@@ -147,6 +156,29 @@ def chat_endpoint(req: ChatRequest):
             }
         except Exception as e:
             print(f"[VIDEO GENERATION ERROR] {e}")
+
+    # Detección de solicitud de generación de imagen directa en el chat
+    is_img, img_subject = detect_image_request(req.prompt)
+    if is_img:
+        try:
+            img_filename = generate_ai_image(img_subject)
+            img_url = f"http://127.0.0.1:8008/api/images/{img_filename}"
+            return {
+                "answer": f"🎨 ¡Aquí tienes la imagen digital en alta definición de **{img_subject}**:",
+                "image_url": img_url,
+                "citations": [],
+                "suggested_questions": [
+                    f"Quiero que me generes un video de {img_subject}",
+                    f"Genera otra imagen de {img_subject} con estilo cinemático 4k",
+                    "Explícame la composición visual de esta escena"
+                ],
+                "target_page": 1,
+                "target_file": req.active_doc,
+                "target_content": "",
+                "highlight_words": []
+            }
+        except Exception as e:
+            print(f"[IMAGE GENERATION ERROR] {e}")
 
     # 2. Recuperación RAG
     rag_info = retrieve_rag_context(req.prompt, req.active_doc, top_k=req.top_k)
